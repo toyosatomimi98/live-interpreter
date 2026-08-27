@@ -20,6 +20,7 @@ venv/
 # 运行产物：录音记录 / 临时音频 / 日志
 transcripts/
 _tmp/
+recordings/
 录音稿_*.md
 tiche_*.mp3
 *.wav

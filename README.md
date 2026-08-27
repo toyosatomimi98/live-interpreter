@@ -126,6 +126,23 @@ audio (typically 48 kHz) down to 16 kHz for Whisper.
 - **System sound (loopback)** — what the PC is playing. Convenient, but the least
   stable; prefer it only when you can't obtain the audio as a file.
 
+### Can't download the lecture? Record the audio instead
+
+If the course platform doesn't let you download the video/audio (e.g. NUS
+WebLecture), you can still get an accurate transcript:
+
+1. Pick **声音来源 → 系统声音**, tick **“录制音频存文件”**, press **开始**, and let
+   the lecture play. The app writes the audio to `recordings\*.wav` (16 kHz mono)
+   while it tries live captions (which may be unreliable).
+2. When the lecture ends, press **停止** (the WAV is saved), then translate the
+   recording reliably:
+
+   ```bat
+   .venv\Scripts\python.exe tongchuan.py --file "recordings\同传录音_....wav" --save --model large-v3-turbo
+   ```
+
+Recordings are stored in `recordings\` and are **gitignored** (never pushed).
+
 ### Translate an audio/video file
 
 This is the recommended way to study English learning materials:

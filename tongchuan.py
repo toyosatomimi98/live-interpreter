@@ -373,7 +373,7 @@ class Segmenter:
 class Pipeline:
     def __init__(self, model_size="base.en", voice_enabled=True,
                  voice="zh-CN-XiaoxiaoNeural", device=None, sensitivity=3.0,
-                 source="mic",
+                 source="mic", save_audio=False,
                  status_cb=None, segment_cb=None, error_cb=None, log_cb=None):
         self.model_size = model_size
         self.voice_enabled = voice_enabled
@@ -381,6 +381,7 @@ class Pipeline:
         self.device = device
         self.sensitivity = sensitivity
         self.source = source
+        self.save_audio = save_audio
         self.capture_rate = 48000 if source == "system" else SAMPLE_RATE
         self.status_cb = status_cb or (lambda *a, **k: None)
         self.segment_cb = segment_cb or (lambda *a, **k: None)
@@ -395,6 +396,8 @@ class Pipeline:
         self._threads = []
         self._stream = None
         self._system_thread = None
+        self._wav = None
+        self._wav_path = None
         self.running = False
         self.model = None
         self.current_model = model_size
@@ -418,6 +421,21 @@ class Pipeline:
             return
         self.running = True
         self.segmenter.set_sensitivity(self.sensitivity)
+
+        if self.save_audio:
+            try:
+                import wave
+                d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
+                os.makedirs(d, exist_ok=True)
+                self._wav_path = os.path.join(d, f"同传录音_{datetime.now():%Y%m%d_%H%M%S}.wav")
+                self._wav = wave.open(self._wav_path, "wb")
+                self._wav.setnchannels(1)
+                self._wav.setsampwidth(2)
+                self._wav.setframerate(SAMPLE_RATE)
+                clog(f"正在录制音频 -> {self._wav_path}")
+            except Exception as e:
+                self._wav = None
+                clog(f"无法创建录音文件：{type(e).__name__}: {e}")
 
         # 识别线程
         t_asr = threading.Thread(target=self._asr_loop, daemon=True)
@@ -459,6 +477,13 @@ class Pipeline:
             except Exception:
                 pass
         self.tts.stop()
+        if self._wav is not None:
+            try:
+                self._wav.close()
+            except Exception:
+                pass
+            clog(f"音频已保存 -> {self._wav_path}")
+            self._wav = None
         self.status_cb("已停止")
 
     def _open_stream(self):
@@ -511,7 +536,18 @@ class Pipeline:
         mono = indata.mean(axis=1) if indata.ndim > 1 else indata
         mono = np.clip(mono, -0.98, 0.98)
         self.current_level = float(np.sqrt(np.mean(np.square(mono))))
+        self._record(mono, SAMPLE_RATE)
         self.segmenter.feed(np.ascontiguousarray(mono, dtype=np.float32))
+
+    def _record(self, mono, sr):
+        """把采集到的声音（可选）写入 16kHz 单声道 WAV，供离线文件模式使用。"""
+        if self._wav is None:
+            return
+        try:
+            a16 = _to_16k(np.ascontiguousarray(mono, dtype=np.float32), sr)
+            self._wav.writeframes((np.clip(a16, -1.0, 1.0) * 32767).astype("<i2").tobytes())
+        except Exception:
+            pass
 
     def _system_capture_loop(self):
         """用 soundcard 内录系统输出声音（WASAPI loopback）。"""
@@ -571,6 +607,7 @@ class Pipeline:
                     mono = arr[:, 0] if arr.ndim == 2 else arr
                     mono = np.clip(mono, -0.98, 0.98)
                     self.current_level = float(np.sqrt(np.mean(np.square(mono))))
+                    self._record(mono, self.capture_rate)
                     self.segmenter.feed(np.ascontiguousarray(mono, dtype=np.float32))
             finally:
                 try:
@@ -791,6 +828,7 @@ class GUI:
         self.zh_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="就绪")
         self.voice_var = tk.BooleanVar(value=opts.voice_enabled)
+        self.rec_var = tk.BooleanVar(value=False)
         self.source_var = tk.StringVar(value="麦克风")
         self.model_var = tk.StringVar(value=opts.model)
         self.device_var = tk.StringVar()
@@ -857,6 +895,10 @@ class GUI:
         tk.Checkbutton(ctrl, text="中文语音播报", variable=self.voice_var,
                        command=self._on_voice, bg="#f4f6fb", font=("Microsoft YaHei UI", 10),
                        activebackground="#f4f6fb").pack(side="left", padx=12)
+
+        tk.Checkbutton(ctrl, text="录制音频存文件", variable=self.rec_var,
+                       bg="#f4f6fb", font=("Microsoft YaHei UI", 10),
+                       activebackground="#f4f6fb").pack(side="left", padx=4)
 
         tk.Label(ctrl, text="声音来源：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
         self.source_box = ttk.Combobox(ctrl, values=["麦克风", "系统声音"],
@@ -1005,6 +1047,7 @@ class GUI:
             model_size=self.model_var.get(),
             voice_enabled=self.voice_var.get(),
             source=source,
+            save_audio=self.rec_var.get(),
             device=self._selected_device(),
             sensitivity=float(self.sens_scale.get()),
             status_cb=lambda s: self.ui_q.put(("status", s)),
@@ -1143,6 +1186,7 @@ def run_console(opts):
     print(f"正在从{src_txt}实时识别并翻译… Ctrl+C 退出。\n")
     pipe = Pipeline(model_size=opts.model, voice_enabled=opts.voice_enabled,
                     source=opts.source, device=None, sensitivity=opts.sensitivity,
+                    save_audio=opts.save_audio,
                     status_cb=lambda s: print("[状态]", s),
                     segment_cb=None,
                     error_cb=lambda e: print("[出错]", e),
@@ -1265,6 +1309,8 @@ def main():
     ap.add_argument("--test-mic", action="store_true", help="自检麦克风电平")
     ap.add_argument("--source", choices=["mic", "system"], default="mic",
                     help="声音来源：mic=麦克风，system=电脑内部声音(内录)")
+    ap.add_argument("--save-audio", action="store_true",
+                    help="同时把采集到的声音录入 recordings\\*.wav（16kHz 单声道）")
     opts = ap.parse_args()
 
     if opts.list_devices:
