@@ -39,6 +39,9 @@ Microphone / audio file
   and only splits on real speech (this was key to making it work with a hot mic).
 - **Live microphone mode** — a GUI with on-screen bilingual captions, a live
   input level meter, and an optional Chinese voice.
+- **System-audio (loopback) mode** — capture what the computer is playing (e.g.,
+  an online lecture or a video) directly, using Windows WASAPI loopback, instead
+  of relying on a physical microphone.
 - **Offline file mode** — transcribe and translate an audio/video file, then save
   a full Markdown transcript.
 - **Pluggable translation** — DeepSeek by default (auto-read from your local
@@ -89,6 +92,20 @@ Microphone / audio file
 .venv\Scripts\python.exe tongchuan.py --console
 ```
 
+### Capture the computer's own audio (system sound / loopback)
+
+To translate audio that is *playing on your computer* — an online recorded
+lecture, a video, or a browser stream — switch the source to **system** instead of
+the microphone. In the GUI, choose **声音来源 → 系统声音** and pick the speaker
+device to monitor. From the CLI:
+
+```bat
+.venv\Scripts\python.exe tongchuan.py --source system --console
+```
+
+This uses Windows **WASAPI loopback** (via `soundcard`) and resamples the captured
+audio (typically 48 kHz) down to 16 kHz for Whisper.
+
 ### Translate an audio/video file
 
 This is the recommended way to study English learning materials:
@@ -105,6 +122,7 @@ The results are printed to the console and, with `--save`, written to
 ```text
 --model base.en|small.en|medium.en   Whisper model size (default: base.en)
 --voice / --no-voice                 Enable / disable spoken Chinese
+--source mic|system                  Input source (microphone or system audio)
 --sensitivity N                      Mic sensitivity (1–8, default 3)
 --list-devices                       List available microphones
 --test-mic                           Self-test each microphone's level

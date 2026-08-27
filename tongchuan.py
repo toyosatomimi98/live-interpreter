@@ -38,6 +38,21 @@ except Exception:
     _get_speech_timestamps = None
 
 try:
+    from scipy.signal import resample_poly as _resample_poly
+except Exception:
+    _resample_poly = None
+
+
+def _to_16k(x: np.ndarray, sr: int) -> np.ndarray:
+    """把 x（采样率 sr）重采样到 16kHz，交给 Whisper。sr==16000 时原样返回。"""
+    x = np.ascontiguousarray(x, dtype=np.float32)
+    if _resample_poly is None or sr == SAMPLE_RATE:
+        return x
+    import math
+    g = math.gcd(SAMPLE_RATE, sr)
+    return np.ascontiguousarray(_resample_poly(x, SAMPLE_RATE // g, sr // g), dtype=np.float32)
+
+try:
     import sounddevice as sd
 except Exception:  # 没有音频库时 GUI 也能显示
     sd = None
@@ -290,24 +305,28 @@ class Segmenter:
 class Pipeline:
     def __init__(self, model_size="base.en", voice_enabled=True,
                  voice="zh-CN-XiaoxiaoNeural", device=None, sensitivity=3.0,
+                 source="mic",
                  status_cb=None, segment_cb=None, error_cb=None, log_cb=None):
         self.model_size = model_size
         self.voice_enabled = voice_enabled
         self.voice = voice
         self.device = device
         self.sensitivity = sensitivity
+        self.source = source
+        self.capture_rate = 48000 if source == "system" else SAMPLE_RATE
         self.status_cb = status_cb or (lambda *a, **k: None)
         self.segment_cb = segment_cb or (lambda *a, **k: None)
         self.error_cb = error_cb or (lambda *a, **k: None)
         self.log_cb = log_cb or (lambda *a, **k: None)
 
         self.translator = Translator()
-        self.segmenter = Segmenter(sensitivity=sensitivity)
+        self.segmenter = Segmenter(sample_rate=self.capture_rate, sensitivity=sensitivity)
         self.asr_prompt = load_asr_prompt()
         self.result_q: "queue.Queue[tuple]" = queue.Queue()
         self._asr_q: "queue.Queue[tuple]" = queue.Queue()
         self._threads = []
         self._stream = None
+        self._system_thread = None
         self.running = False
         self.model = None
         self.tts = TtsPlayer(voice, enabled=voice_enabled)
@@ -333,8 +352,13 @@ class Pipeline:
 
         self.segmenter.start()
         self.tts.enabled = self.voice_enabled
-        self.status_cb("正在准备麦克风…")
-        self._open_stream()
+        if self.source == "system":
+            self.status_cb("正在准备系统内录…")
+            self._system_thread = threading.Thread(target=self._system_capture_loop, daemon=True)
+            self._system_thread.start()
+        else:
+            self.status_cb("正在准备麦克风…")
+            self._open_stream()
 
     def stop(self):
         if not self.running:
@@ -347,6 +371,8 @@ class Pipeline:
         except Exception:
             pass
         self._stream = None
+        if self._system_thread is not None:
+            self._system_thread = None
         self.segmenter.stop()
         for q in (self._asr_q, self.result_q):
             try:
@@ -408,6 +434,67 @@ class Pipeline:
         self.current_level = float(np.sqrt(np.mean(np.square(mono))))
         self.segmenter.feed(np.ascontiguousarray(mono, dtype=np.float32))
 
+    def _system_capture_loop(self):
+        """用 soundcard 内录系统输出声音（WASAPI loopback）。"""
+        try:
+            import soundcard as sc
+        except Exception as e:
+            self.error_cb(f"未安装 soundcard，无法内录：{type(e).__name__}: {e}")
+            self.running = False
+            return
+        try:
+            mics = sc.all_microphones(include_loopback=True)
+        except Exception as e:
+            self.error_cb(f"无法列出内录设备：{type(e).__name__}: {e}")
+            self.running = False
+            return
+        loopbacks = [m for m in mics if getattr(m, "isloopback", False)] or list(mics)
+        chosen = None
+        if self.device is not None:
+            for m in loopbacks:
+                if self.device in (m.name, m.id):
+                    chosen = m
+                    break
+        if chosen is None:
+            chosen = loopbacks[0]
+
+        rec = None
+        for sr in (48000, 44100):
+            try:
+                rec = chosen.recorder(samplerate=sr, channels=2)
+                rec.__enter__()
+                self.capture_rate = sr
+                self.segmenter.sample_rate = sr
+                break
+            except Exception:
+                rec = None
+        if rec is None:
+            self.error_cb("无法打开系统内录（试过 48000 / 44100 Hz）。")
+            self.running = False
+            return
+
+        self.status_cb(f"正在听系统声音…（{chosen.name}）")
+        block = int(self.capture_rate * 0.1)
+        try:
+            while self.running:
+                try:
+                    data = rec.record(numframes=block)
+                except Exception as e:
+                    self.error_cb(f"内录读取失败：{type(e).__name__}: {e}")
+                    break
+                if data is None:
+                    continue
+                arr = np.asarray(data, dtype=np.float32)
+                mono = arr[:, 0] if arr.ndim == 2 else arr
+                mono = np.clip(mono, -0.98, 0.98)
+                self.current_level = float(np.sqrt(np.mean(np.square(mono))))
+                self.segmenter.feed(np.ascontiguousarray(mono, dtype=np.float32))
+        finally:
+            try:
+                rec.__exit__(None, None, None)
+            except Exception:
+                pass
+
     # ---------------- 识别 ----------------
     def _asr_loop(self):
         self.status_cb("正在加载语音模型（首次约 10~20 秒）…")
@@ -427,7 +514,7 @@ class Pipeline:
             if seg is None:
                 break
             try:
-                seg = np.ascontiguousarray(seg, dtype=np.float32)
+                seg = _to_16k(np.ascontiguousarray(seg, dtype=np.float32), self.capture_rate)
                 seg_iters, info = self.model.transcribe(
                     seg, beam_size=1, language="en", vad_filter=True,
                     condition_on_previous_text=False,
@@ -592,6 +679,7 @@ class GUI:
         self.zh_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="就绪")
         self.voice_var = tk.BooleanVar(value=opts.voice_enabled)
+        self.source_var = tk.StringVar(value="麦克风")
         self.device_var = tk.StringVar()
         self.skip_tts = threading.Lock()
         self.ui_q: "queue.Queue[tuple]" = queue.Queue()
@@ -657,7 +745,12 @@ class GUI:
                        command=self._on_voice, bg="#f4f6fb", font=("Microsoft YaHei UI", 10),
                        activebackground="#f4f6fb").pack(side="left", padx=12)
 
-        tk.Label(ctrl, text="麦克风：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
+        tk.Label(ctrl, text="声音来源：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
+        self.source_box = ttk.Combobox(ctrl, values=["麦克风", "系统声音"],
+                                       textvariable=self.source_var, width=8, state="readonly")
+        self.source_box.pack(side="left", padx=(0, 6))
+        self.source_box.bind("<<ComboboxSelected>>", self._on_source)
+        tk.Label(ctrl, text="设备：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left")
         self.device_box = ttk.Combobox(ctrl, textvariable=self.device_var, width=30,
                                        state="readonly")
         self.device_box.pack(side="left", padx=(0, 4))
@@ -687,6 +780,25 @@ class GUI:
 
     # ---------------- 设备 ----------------
     def _refresh_devices(self):
+        if self.source_var.get() == "系统声音":
+            self._devices = {}
+            items = []
+            try:
+                import soundcard as sc
+                for m in sc.all_microphones(include_loopback=True):
+                    if not getattr(m, "isloopback", False):
+                        continue
+                    label = m.name
+                    self._devices[label] = m.id
+                    items.append(label)
+            except Exception as e:
+                self._show_error(f"内录设备列表失败：{type(e).__name__}: {e}")
+            self.device_box["values"] = items
+            if items:
+                self.device_var.set(items[0])
+                self.device_box.current(0)
+            return
+
         if sd is None:
             self.device_box["values"] = []
             return
@@ -718,6 +830,9 @@ class GUI:
             self.device_var.set(sel_label)
             self.device_box.current(items.index(sel_label))
 
+    def _on_source(self, event=None):
+        self._refresh_devices()
+
     def _selected_device(self):
         try:
             label = self.device_var.get()
@@ -748,9 +863,11 @@ class GUI:
         self._append_log("INFO", line)
 
     def _build_pipeline(self):
+        source = "system" if self.source_var.get() == "系统声音" else "mic"
         self.pipeline = Pipeline(
             model_size=self.opts.model,
             voice_enabled=self.voice_var.get(),
+            source=source,
             device=self._selected_device(),
             sensitivity=float(self.sens_scale.get()),
             status_cb=lambda s: self.ui_q.put(("status", s)),
@@ -880,9 +997,10 @@ class GUI:
 def run_console(opts):
     trans = Translator()
     print("已使用 API key：", trans.key_summary())
-    print("正在从麦克风实时识别并翻译… Ctrl+C 退出。\n")
+    src_txt = "系统声音" if opts.source == "system" else "麦克风"
+    print(f"正在从{src_txt}实时识别并翻译… Ctrl+C 退出。\n")
     pipe = Pipeline(model_size=opts.model, voice_enabled=opts.voice_enabled,
-                    device=None, sensitivity=opts.sensitivity,
+                    source=opts.source, device=None, sensitivity=opts.sensitivity,
                     status_cb=lambda s: print("[状态]", s),
                     segment_cb=None,
                     error_cb=lambda e: print("[出错]", e),
@@ -1000,6 +1118,8 @@ def main():
     ap.add_argument("--sensitivity", type=float, default=3.0)
     ap.add_argument("--list-devices", action="store_true", help="列出麦克风设备")
     ap.add_argument("--test-mic", action="store_true", help="自检麦克风电平")
+    ap.add_argument("--source", choices=["mic", "system"], default="mic",
+                    help="声音来源：mic=麦克风，system=电脑内部声音(内录)")
     opts = ap.parse_args()
 
     if opts.list_devices:
