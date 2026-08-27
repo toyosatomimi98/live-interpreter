@@ -136,7 +136,8 @@ The results are printed to the console and, with `--save`, written to
 ### Useful options
 
 ```text
---model base.en|small.en|medium.en   Whisper model size (default: base.en)
+--model base.en|small.en|medium.en|large-v3-turbo|large-v3
+                                    Whisper model (default: small.en)
 --voice / --no-voice                 Enable / disable spoken Chinese
 --source mic|system                  Input source (microphone or system audio)
 --sensitivity N                      Mic sensitivity (1–8, default 3)
@@ -144,6 +145,10 @@ The results are printed to the console and, with `--save`, written to
 --test-mic                           Self-test each microphone's level
 --save                               (with --file) save a Markdown transcript
 ```
+
+The GUI now has a **“识别模型” model dropdown** so you can switch the ASR model and
+compare results interactively (default is `small.en`; larger models are more
+accurate but slower).
 
 For more accurate technical terminology, use `--model small.en`:
 
@@ -162,6 +167,12 @@ If you study **Electronic & Computer Engineering** materials, two settings help 
    ```bat
    .venv\Scripts\python.exe tongchuan.py --model small.en
    ```
+
+   > **Accented English (e.g. Indian/Punjabi accents):** small models can struggle
+   > with heavily accented speech. For the best accuracy on such lectures, use
+   > `large-v3-turbo` with **file mode** (`--file lecture.mp3 --save`), where there
+   > is no real-time limit. On CPU the large model is much slower, so it's meant for
+   > recordings rather than live captions.
 
 2. **Domain-aware prompts.** The speech recognizer feeds a curated vocabulary to
    Whisper as an `initial_prompt`, and the translator uses a domain-specific system

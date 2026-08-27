@@ -745,6 +745,7 @@ class GUI:
         self.status_var = tk.StringVar(value="就绪")
         self.voice_var = tk.BooleanVar(value=opts.voice_enabled)
         self.source_var = tk.StringVar(value="麦克风")
+        self.model_var = tk.StringVar(value=opts.model)
         self.device_var = tk.StringVar()
         self.skip_tts = threading.Lock()
         self.ui_q: "queue.Queue[tuple]" = queue.Queue()
@@ -822,6 +823,15 @@ class GUI:
         tk.Button(ctrl, text="刷新", command=self._refresh_devices,
                   bg="#e5e7eb", fg="#374151", font=("Microsoft YaHei UI", 9),
                   padx=8, pady=2, bd=0, cursor="hand2").pack(side="left", padx=2)
+
+        tk.Label(ctrl, text="识别模型：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
+        self.model_box = ttk.Combobox(ctrl, textvariable=self.model_var,
+                                      values=["base.en", "small.en", "medium.en",
+                                              "large-v3-turbo", "large-v3"],
+                                      width=16, state="readonly")
+        self.model_box.pack(side="left", padx=(0, 2))
+        tk.Label(ctrl, text="[越大越准但越慢；大模型建议配合文件模式]", bg="#f4f6fb",
+                 fg="#9ca3af", font=("Microsoft YaHei UI", 9)).pack(side="left")
 
         # 灵敏度
         sens_row = tk.Frame(self.root, bg="#f4f6fb")
@@ -931,7 +941,7 @@ class GUI:
     def _build_pipeline(self):
         source = "system" if self.source_var.get() == "系统声音" else "mic"
         self.pipeline = Pipeline(
-            model_size=self.opts.model,
+            model_size=self.model_var.get(),
             voice_enabled=self.voice_var.get(),
             source=source,
             device=self._selected_device(),
@@ -1174,7 +1184,8 @@ def mic_test():
 
 def main():
     ap = argparse.ArgumentParser(description="麦克风实时英语→中语同声传译")
-    ap.add_argument("--model", default="base.en", help="whisper 模型大小（base.en/small.en/medium.en）")
+    ap.add_argument("--model", default="small.en",
+                    help="whisper 模型（base.en/small.en/medium.en/large-v3-turbo/large-v3；默认 small.en）")
     ap.add_argument("--console", action="store_true", help="控制台模式")
     ap.add_argument("--file", default=None, help="识别单个音频文件（mp3/wav 等）")
     ap.add_argument("--save", action="store_true", help="文件模式保存 markdown 记录")
