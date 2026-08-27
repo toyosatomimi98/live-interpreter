@@ -155,6 +155,13 @@ If you study **Electronic & Computer Engineering** materials, two settings help 
    are never pushed. Translation behavior can be adjusted in `translation.py`
    (`ECE_SYSTEM_PROMPT`).
 
+3. **What "Sensitivity" really does.** The Sensitivity slider only controls how
+   eagerly audio is treated as speech (low = more sensitive, high = more robust
+   against background noise). It does **not** affect translation quality. For more
+   accurate output, prefer a larger model and the domain prompt above. Translation
+   is already instructed to be faithful and complete (keep every detail, no
+   summarizing) and runs at temperature 0 for consistent results.
+
 ## Translation backend & API key
 
 Translation uses **DeepSeek** (an OpenAI-compatible endpoint) by default. The API

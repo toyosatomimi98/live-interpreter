@@ -151,6 +151,7 @@ class Segmenter:
 
     def set_sensitivity(self, value: float):
         self.sensitivity = max(1.0, float(value))
+        self._apply_vad_threshold()
 
     def start(self):
         if self._thread is None:
@@ -170,6 +171,7 @@ class Segmenter:
                 min_silence_duration_ms=180,
                 speech_pad_ms=60,
             )
+            self._apply_vad_threshold()
         except Exception as e:
             self._vad = None
             try:
@@ -177,6 +179,14 @@ class Segmenter:
                 sys.stderr.write(f"[vad] 不可用，退回能量分段：{type(e).__name__}: {e}\n")
             except Exception:
                 pass
+
+    def _apply_vad_threshold(self):
+        """把“灵敏度”映射到 silero VAD 的说话概率阈值。
+        （灵敏度越低→阈值越低→越灵敏；越高→阈值越高→越严格、越抗噪）"""
+        if self._vad_options is None:
+            return
+        thr = 0.40 + (self.sensitivity - 1.0) * 0.05
+        self._vad_options.threshold = min(0.75, max(0.35, thr))
 
     def stop(self):
         self._stop = True
@@ -761,7 +771,8 @@ class GUI:
         # 灵敏度
         sens_row = tk.Frame(self.root, bg="#f4f6fb")
         sens_row.pack(fill="x", padx=12, pady=2)
-        tk.Label(sens_row, text="灵敏度", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(0, 8))
+        tk.Label(sens_row, text="灵敏度 (低=灵敏，高=抗噪)", bg="#f4f6fb",
+                 font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(0, 8))
         self.sens_scale = ttk.Scale(sens_row, from_=1.0, to=8.0, value=3.0,
                                     command=self._on_sens)
         self.sens_scale.pack(side="left", fill="x", expand=True, padx=(0, 12))

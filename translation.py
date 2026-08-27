@@ -29,8 +29,11 @@ ECE_SYSTEM_PROMPT = (
     "abbreviations (e.g., Fourier transform, convolution, VLSI, FPGA, PWM, "
     "state-space, gradient descent, DFT, LQR). If a term is hard to translate "
     "naturally, give the Chinese translation followed by the original in "
-    "brackets, e.g., 卷积（convolution）. Keep mathematical notation, equations, "
-    "and variable names unchanged. Output ONLY the Chinese translation."
+    "brackets, e.g., 卷积（convolution）. Translate faithfully and completely: "
+    "preserve every technical detail, numeric value, logic connective (if/only "
+    "if/whereas/therefore), and the full meaning of each clause. Do NOT summarize, "
+    "simplify, omit, or add your own examples. Keep mathematical notation, "
+    "equations, and variable names unchanged. Output ONLY the Chinese translation."
 )
 
 
@@ -100,7 +103,7 @@ class Translator:
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": text},
             ],
-            "temperature": 0.2,
+            "temperature": 0.0,
         }).encode("utf-8")
         req = urllib.request.Request(
             self.base_url + "/chat/completions",
