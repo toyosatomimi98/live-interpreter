@@ -106,6 +106,22 @@ device to monitor. From the CLI:
 This uses Windows **WASAPI loopback** (via `soundcard`) and resamples the captured
 audio (typically 48 kHz) down to 16 kHz for Whisper.
 
+> **Loopback is the least reliable source.** If you see a flood of
+> `data discontinuity in recording` warnings, or get only the **first** sentence
+> translated and then the meter stays on “待机” (standby), the loopback stream is
+> delivering broken or noisy audio — the speech detector no longer finds clear
+> speech, so subsequent sentences are skipped (or Whisper hallucinates junk).
+> Suppressed those benign warnings; for accuracy, use the audio-file or microphone
+> modes below.
+
+### Which source should I use?
+
+- **Microphone** — live, ambient speech (your own voice, or the room). Reliable.
+- **Audio file** — the **recommended** way to study a recorded lecture / video:
+  translate the whole file at once with no real-time constraints.
+- **System sound (loopback)** — what the PC is playing. Convenient, but the least
+  stable; prefer it only when you can't obtain the audio as a file.
+
 ### Translate an audio/video file
 
 This is the recommended way to study English learning materials:
@@ -199,6 +215,14 @@ To change the model or endpoint, edit `translation.py`.
   raise **Sensitivity**, or run `--test-mic` and pick a device with a sane level.
 - **No spoken Chinese:** confirm the system output device works and that voice is
   enabled.
+- **Only the first sentence is translated, then nothing (meter stays “待机”):**
+  this is usually a *source* reliability problem, not a bug in the pipeline. The
+  app translates speech continuously when it receives clean audio. If you are on
+  the **system sound (loopback)** source, the WASAPI loopback stream may be
+  dropping/breaking audio after the first sentence (look for
+  `data discontinuity in recording`). Switch to **audio-file** mode
+  (`--file lecture.mp3 --save`) or the **microphone** for reliable results; if you
+  must use loopback, pick the output device that is actually playing audio.
 - **Reinstall / move to another machine:** run `安装同声传译.bat` (needs internet;
   it creates the environment, installs dependencies, and downloads the model).
 
@@ -221,5 +245,7 @@ MIT — see [LICENSE](LICENSE).
 双击 安装同声传译.bat   # 首次安装（需联网）
 双击 启动同声传译.bat   # 启动界面
 ```
+
+**来源选择建议**：学录播/视频**优先用文件模式** `--file 讲座.mp3 --save`（整段稳定翻译成双语稿）；现场实时用**麦克风**最稳；「系统声音(内录)」最方便但**最不稳定**——若只翻出第一句、或一直显示“待机”，多半是内录把音频抓成了断续/噪声，请改用文件或麦克风。
 
 更详细的中文使用说明可查看历史版本或提交 issue。
