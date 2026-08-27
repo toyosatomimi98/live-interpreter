@@ -186,7 +186,7 @@ class Segmenter:
     优先用 silero VAD（能区分“人声”和“底噪”），VAD 不可用时退回能量判断。
     """
 
-    def __init__(self, sample_rate=SAMPLE_RATE, min_silence=0.45, max_seg=10.0,
+    def __init__(self, sample_rate=SAMPLE_RATE, min_silence=0.6, max_seg=10.0,
                  sensitivity=3.0, min_threshold=0.003):
         self.sample_rate = sample_rate
         self.min_silence = min_silence
@@ -225,9 +225,9 @@ class Segmenter:
             self._vad_options = VadOptions(
                 threshold=0.5,
                 neg_threshold=0.35,
-                min_speech_duration_ms=250,
-                min_silence_duration_ms=180,
-                speech_pad_ms=60,
+                min_speech_duration_ms=500,
+                min_silence_duration_ms=300,
+                speech_pad_ms=80,
             )
             self._apply_vad_threshold()
         except Exception as e:
@@ -627,6 +627,10 @@ class Pipeline:
                 )
                 text = "".join(s.text for s in seg_iters).strip()
                 self.segments_count += 1
+                # 跳过太短的残片（很可能是噪声/幻听/被截断），避免翻出奇怪内容
+                if len(text.split()) < 3:
+                    clog(f"跳过过短片段：{text!r}")
+                    continue
                 if text:
                     t0 = time.time()
                     self._asr_q.put((text, t0))

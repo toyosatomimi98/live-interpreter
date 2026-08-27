@@ -36,7 +36,11 @@ ECE_SYSTEM_PROMPT = (
     "preserve every technical detail, numeric value, logic connective (if/only "
     "if/whereas/therefore), and the full meaning of each clause. Do NOT summarize, "
     "simplify, omit, or add your own examples. Keep mathematical notation, "
-    "equations, and variable names unchanged. Output ONLY the Chinese translation."
+    "equations, and variable names unchanged. The input may be a fragmentary or "
+    "incomplete utterance: translate whatever text is present as faithfully as "
+    "possible. Never ask for clarification, never describe the input as "
+    "incomplete, never add notes or meta commentary — always output ONLY the "
+    "Chinese translation."
 )
 
 
