@@ -57,6 +57,44 @@ from translation import Translator, load_api_key
 SAMPLE_RATE = 16000
 CHANNELS = 1
 
+# 针对“电子与计算机工程”类英文讲课的专业词表，用作用户可覆盖的默认值。
+# 作用：作为 Whisper 的 initial_prompt，显著提升技术术语的识别准确率。
+DEFAULT_ASR_PROMPT = (
+    "Signal processing, Fourier transform, convolution, filter, sampling theorem, "
+    "frequency response, Laplace transform, Z-transform, transfer function, "
+    "circuit analysis, Kirchhoff's laws, operational amplifier, transistor, CMOS, "
+    "digital logic, Boolean algebra, finite state machine, microprocessor, "
+    "embedded systems, microcontroller, real-time operating system, "
+    "computer architecture, instruction set, pipeline, cache, memory hierarchy, "
+    "digital signal processor, ADC, DAC, PWM, "
+    "control systems, feedback, PID controller, state-space, "
+    "machine learning, neural network, deep learning, gradient descent, "
+    "convolutional neural network, reinforcement learning, "
+    "robotics, actuator, kinematics, impedance, "
+    "wireless communication, modulation, OFDM, channel coding, "
+    "electromagnetics, antenna, "
+    "probability, random variable, expectation, Gaussian distribution, "
+    "optimization, gradient, convergence, equation, derivative, integral, "
+    "matrix, eigenvalue, eigenvector, "
+    "stability, linear time-invariant, discrete time, continuous time, "
+    "processor, register, firmware, compiler, operating system, "
+    "digital filter, low-pass filter, sampling rate, Nyquist, "
+    "circuit, current, voltage, resistance, capacitance, inductance"
+)
+
+
+def load_asr_prompt() -> str:
+    """优先读取项目目录下的 prompt.txt（用户可按课程定制），否则用内置专业词表。"""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompt.txt")
+    if os.path.exists(p):
+        try:
+            content = open(p, encoding="utf-8").read().strip()
+            if content:
+                return content
+        except OSError:
+            pass
+    return DEFAULT_ASR_PROMPT
+
 # tkinter 在无图形环境可能不可用，做可选导入
 try:
     import tkinter as tk
@@ -265,6 +303,7 @@ class Pipeline:
 
         self.translator = Translator()
         self.segmenter = Segmenter(sensitivity=sensitivity)
+        self.asr_prompt = load_asr_prompt()
         self.result_q: "queue.Queue[tuple]" = queue.Queue()
         self._asr_q: "queue.Queue[tuple]" = queue.Queue()
         self._threads = []
@@ -392,6 +431,7 @@ class Pipeline:
                 seg_iters, info = self.model.transcribe(
                     seg, beam_size=1, language="en", vad_filter=True,
                     condition_on_previous_text=False,
+                    initial_prompt=self.asr_prompt,
                 )
                 text = "".join(s.text for s in seg_iters).strip()
                 self.segments_count += 1

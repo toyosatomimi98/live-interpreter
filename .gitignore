@@ -47,3 +47,4 @@ _probe*.py
 _scan*.py
 _test.mp3
 *.tmp
+prompt.txt

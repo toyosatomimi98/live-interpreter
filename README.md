@@ -117,6 +117,26 @@ For more accurate technical terminology, use `--model small.en`:
 .venv\Scripts\python.exe tongchuan.py --model small.en
 ```
 
+### Better accuracy for ECE / technical content
+
+If you study **Electronic & Computer Engineering** materials, two settings help a lot:
+
+1. **Use a larger Whisper model.** `base.en` is fast but can fumble technical
+   words. `small.en` is a big step up, and `medium.en` is even better (slower on
+   CPU):
+
+   ```bat
+   .venv\Scripts\python.exe tongchuan.py --model small.en
+   ```
+
+2. **Domain-aware prompts.** The speech recognizer already feeds a curated list of
+   ECE terms to Whisper as an `initial_prompt`, and the translator uses an
+   ECE-specific system prompt that keeps English terms with a Chinese gloss (e.g.,
+   卷积（convolution）). To tune this per course, edit `prompt.txt` in the project
+   folder — it is read at runtime and is **gitignored**, so your personal additions
+   are never pushed. Translation behavior can be adjusted in `translation.py`
+   (`ECE_SYSTEM_PROMPT`).
+
 ## Translation backend & API key
 
 Translation uses **DeepSeek** (an OpenAI-compatible endpoint) by default. The API

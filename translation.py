@@ -21,6 +21,19 @@ import urllib.parse
 import urllib.request
 
 
+# 面向“电子与计算机工程”专业内容的翻译提示词。
+ECE_SYSTEM_PROMPT = (
+    "You are a simultaneous interpreter for a Chinese student of Electronic and "
+    "Computer Engineering. Translate the given English into fluent, natural "
+    "Simplified Chinese. Preserve key technical terms, acronyms, and English "
+    "abbreviations (e.g., Fourier transform, convolution, VLSI, FPGA, PWM, "
+    "state-space, gradient descent, DFT, LQR). If a term is hard to translate "
+    "naturally, give the Chinese translation followed by the original in "
+    "brackets, e.g., 卷积（convolution）. Keep mathematical notation, equations, "
+    "and variable names unchanged. Output ONLY the Chinese translation."
+)
+
+
 def _find_key_in_codex_config() -> str | None:
     for path in (
         os.path.expanduser("~/.codex/config.toml"),
@@ -71,10 +84,12 @@ class Translator:
 
     def __init__(self, api_key: str | None = None,
                  base_url: str = "https://api.deepseek.com/",
-                 model: str = "deepseek-chat"):
+                 model: str = "deepseek-chat",
+                 system_prompt: str | None = None):
         self.api_key = api_key or load_api_key()
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.system_prompt = system_prompt or ECE_SYSTEM_PROMPT
         self.last_backend = "none"
         self.last_error = ""
 
@@ -82,12 +97,7 @@ class Translator:
         body = json.dumps({
             "model": self.model,
             "messages": [
-                {"role": "system",
-                 "content": "You are a simultaneous interpreter. Translate the "
-                            "English text into fluent, natural Simplified Chinese. "
-                            "Keep technical terms in a way a Chinese graduate student "
-                            "would understand. Output ONLY the Chinese translation, "
-                            "with no extra commentary or quotes."},
+                {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": text},
             ],
             "temperature": 0.2,
