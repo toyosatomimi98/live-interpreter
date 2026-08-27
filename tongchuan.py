@@ -521,6 +521,8 @@ class Pipeline:
             self.error_cb(f"未安装 soundcard，无法内录：{type(e).__name__}: {e}")
             self.running = False
             return
+        # soundcard 导入后会强制“总是显示”该警告，须在导入之后才真正屏蔽
+        warnings.filterwarnings("ignore", message=".*data discontinuity in recording.*")
         needs_com = _com_init()
         try:
             try:
@@ -903,6 +905,7 @@ class GUI:
             items = []
             try:
                 import soundcard as sc
+                warnings.filterwarnings("ignore", message=".*data discontinuity in recording.*")
                 for m in sc.all_microphones(include_loopback=True):
                     if not getattr(m, "isloopback", False):
                         continue
@@ -1103,6 +1106,8 @@ class GUI:
         self.root.after(120, self._poll)
 
     def _show_result(self, item):
+        if not isinstance(item, dict):
+            return  # 停止时队列里的 None 哨兵
         en = item.get("en", "")
         zh = item.get("zh", "")
         backend = item.get("backend", "")
@@ -1151,6 +1156,8 @@ def run_console(opts):
                 item = pipe.result_q.get(timeout=0.5)
             except queue.Empty:
                 continue
+            if item is None:
+                break
             en = item["en"]; zh = item["zh"]
             print("─" * 60)
             print("EN:", en)
