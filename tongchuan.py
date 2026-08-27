@@ -75,26 +75,51 @@ CHANNELS = 1
 # 针对“电子与计算机工程”类英文讲课的专业词表，用作用户可覆盖的默认值。
 # 作用：作为 Whisper 的 initial_prompt，显著提升技术术语的识别准确率。
 DEFAULT_ASR_PROMPT = (
-    "Signal processing, Fourier transform, convolution, filter, sampling theorem, "
+    # 信号与系统 / 电子
+    "signal processing, Fourier transform, convolution, filter, sampling theorem, "
     "frequency response, Laplace transform, Z-transform, transfer function, "
     "circuit analysis, Kirchhoff's laws, operational amplifier, transistor, CMOS, "
     "digital logic, Boolean algebra, finite state machine, microprocessor, "
-    "embedded systems, microcontroller, real-time operating system, "
-    "computer architecture, instruction set, pipeline, cache, memory hierarchy, "
-    "digital signal processor, ADC, DAC, PWM, "
+    "digital signal processor, ADC, DAC, PWM, electromagnetics, antenna, impedance, "
+    "Nyquist, low-pass filter, digital filter, "
+    # 控制 / 机器学习 / 机器人
     "control systems, feedback, PID controller, state-space, "
     "machine learning, neural network, deep learning, gradient descent, "
     "convolutional neural network, reinforcement learning, "
-    "robotics, actuator, kinematics, impedance, "
-    "wireless communication, modulation, OFDM, channel coding, "
-    "electromagnetics, antenna, "
-    "probability, random variable, expectation, Gaussian distribution, "
-    "optimization, gradient, convergence, equation, derivative, integral, "
-    "matrix, eigenvalue, eigenvector, "
-    "stability, linear time-invariant, discrete time, continuous time, "
-    "processor, register, firmware, compiler, operating system, "
-    "digital filter, low-pass filter, sampling rate, Nyquist, "
-    "circuit, current, voltage, resistance, capacitance, inductance"
+    "robotics, actuator, kinematics, "
+    # 概率 / 数学
+    "probability, random variable, Gaussian distribution, expectation, "
+    "optimization, gradient, convergence, derivative, integral, "
+    "matrix, eigenvalue, eigenvector, linear time invariant, discrete time, "
+    # 计算机组成 / 硬件优化
+    "computer architecture, instruction set, ISA, microarchitecture, "
+    "pipelining, pipeline, superscalar, out-of-order execution, branch prediction, "
+    "instruction-level parallelism, vectorization, SIMD, "
+    "arithmetic logic unit, floating point unit, register file, register, "
+    "throughput, latency, bandwidth, clock cycle, clock frequency, "
+    "power consumption, energy efficiency, RISC, CISC, processor, "
+    # 存储层次 / 缓存 / 虚拟内存
+    "memory hierarchy, locality, spatial locality, temporal locality, "
+    "cache, cache hit, cache miss, cache line, cache block, "
+    "hit rate, miss rate, direct-mapped cache, set-associative, fully associative, "
+    "write-back, write-through, LRU, replacement policy, "
+    "cache coherence, coherence protocol, MESI, L1 cache, L2 cache, L3 cache, "
+    "virtual memory, page table, paging, TLB, address translation, "
+    # 并行 / 并发
+    "parallelism, parallel computing, concurrency, multithreading, thread, process, "
+    "data parallelism, task parallelism, load balancing, speedup, Amdahl's law, "
+    "embarrassingly parallel, synchronization, mutual exclusion, critical section, "
+    "deadlock, race condition, lock, semaphore, monitor, atomicity, "
+    "shared memory, distributed memory, message passing, memory consistency, "
+    "GPU computing, CUDA, OpenMP, MPI, "
+    # 计算机网络
+    "computer network, networking, packet switching, protocol, TCP, IP, UDP, "
+    "IP address, subnet, router, switch, gateway, DNS, HTTP, HTTPS, "
+    "socket, port, congestion control, flow control, packet loss, "
+    "routing, routing protocol, load balancer, firewall, VPN, "
+    "LAN, WAN, MAC address, Ethernet, Wi-Fi, OSI model, "
+    "TCP handshake, three-way handshake, retransmission, checksum, CRC, "
+    "error detection, error correction"
 )
 
 

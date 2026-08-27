@@ -147,12 +147,15 @@ If you study **Electronic & Computer Engineering** materials, two settings help 
    .venv\Scripts\python.exe tongchuan.py --model small.en
    ```
 
-2. **Domain-aware prompts.** The speech recognizer already feeds a curated list of
-   ECE terms to Whisper as an `initial_prompt`, and the translator uses an
-   ECE-specific system prompt that keeps English terms with a Chinese gloss (e.g.,
-   卷积（convolution）). To tune this per course, edit `prompt.txt` in the project
-   folder — it is read at runtime and is **gitignored**, so your personal additions
-   are never pushed. Translation behavior can be adjusted in `translation.py`
+2. **Domain-aware prompts.** The speech recognizer feeds a curated vocabulary to
+   Whisper as an `initial_prompt`, and the translator uses a domain-specific system
+   prompt that keeps English terms with a Chinese gloss (e.g., 卷积（convolution）,
+   缓存一致性协议（cache coherence protocol）). The built-in vocabulary covers
+   signal processing, control & ML, computer architecture and hardware optimization,
+   caches and memory hierarchy, parallel & distributed computing, and computer
+   networks. To tune this per course, edit `prompt.txt` in the project folder — it
+   is read at runtime and is **gitignored**, so your personal additions are never
+   pushed. Translation behavior can be adjusted in `translation.py`
    (`ECE_SYSTEM_PROMPT`).
 
 3. **What "Sensitivity" really does.** The Sensitivity slider only controls how
