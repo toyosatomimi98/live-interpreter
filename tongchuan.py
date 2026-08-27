@@ -52,6 +52,27 @@ def _to_16k(x: np.ndarray, sr: int) -> np.ndarray:
     g = math.gcd(SAMPLE_RATE, sr)
     return np.ascontiguousarray(_resample_poly(x, SAMPLE_RATE // g, sr // g), dtype=np.float32)
 
+
+def _com_init() -> bool:
+    """初始化当前线程的 COM（WASAPI/声音设备需要）。返回是否需要 CoUninitialize。"""
+    try:
+        import ctypes
+        # COINIT_MULTITHREADED = 0
+        hr = ctypes.windll.ole32.CoInitializeEx(None, 0)
+        # 只有 S_OK(0) 表示“我们确实第一次初始化了 COM”，需要其在结束时释放；
+        # S_FALSE(1)/CHANGED_MODE 表示已由别的代码初始化，无需释放。
+        return hr == 0
+    except Exception:
+        return False
+
+
+def _com_uninit():
+    try:
+        import ctypes
+        ctypes.windll.ole32.CoUninitialize()
+    except Exception:
+        pass
+
 try:
     import sounddevice as sd
 except Exception:  # 没有音频库时 GUI 也能显示
@@ -477,58 +498,63 @@ class Pipeline:
             self.error_cb(f"未安装 soundcard，无法内录：{type(e).__name__}: {e}")
             self.running = False
             return
+        needs_com = _com_init()
         try:
-            mics = sc.all_microphones(include_loopback=True)
-        except Exception as e:
-            self.error_cb(f"无法列出内录设备：{type(e).__name__}: {e}")
-            self.running = False
-            return
-        loopbacks = [m for m in mics if getattr(m, "isloopback", False)] or list(mics)
-        chosen = None
-        if self.device is not None:
-            for m in loopbacks:
-                if self.device in (m.name, m.id):
-                    chosen = m
-                    break
-        if chosen is None:
-            chosen = loopbacks[0]
-
-        rec = None
-        for sr in (48000, 44100):
             try:
-                rec = chosen.recorder(samplerate=sr, channels=2)
-                rec.__enter__()
-                self.capture_rate = sr
-                self.segmenter.sample_rate = sr
-                break
-            except Exception:
-                rec = None
-        if rec is None:
-            self.error_cb("无法打开系统内录（试过 48000 / 44100 Hz）。")
-            self.running = False
-            return
+                mics = sc.all_microphones(include_loopback=True)
+            except Exception as e:
+                self.error_cb(f"无法列出内录设备：{type(e).__name__}: {e}")
+                self.running = False
+                return
+            loopbacks = [m for m in mics if getattr(m, "isloopback", False)] or list(mics)
+            chosen = None
+            if self.device is not None:
+                for m in loopbacks:
+                    if self.device in (m.name, m.id):
+                        chosen = m
+                        break
+            if chosen is None:
+                chosen = loopbacks[0]
 
-        self.status_cb(f"正在听系统声音…（{chosen.name}）")
-        block = int(self.capture_rate * 0.1)
-        try:
-            while self.running:
+            rec = None
+            for sr in (48000, 44100):
                 try:
-                    data = rec.record(numframes=block)
-                except Exception as e:
-                    self.error_cb(f"内录读取失败：{type(e).__name__}: {e}")
+                    rec = chosen.recorder(samplerate=sr, channels=2)
+                    rec.__enter__()
+                    self.capture_rate = sr
+                    self.segmenter.sample_rate = sr
                     break
-                if data is None:
-                    continue
-                arr = np.asarray(data, dtype=np.float32)
-                mono = arr[:, 0] if arr.ndim == 2 else arr
-                mono = np.clip(mono, -0.98, 0.98)
-                self.current_level = float(np.sqrt(np.mean(np.square(mono))))
-                self.segmenter.feed(np.ascontiguousarray(mono, dtype=np.float32))
-        finally:
+                except Exception:
+                    rec = None
+            if rec is None:
+                self.error_cb("无法打开系统内录（试过 48000 / 44100 Hz）。")
+                self.running = False
+                return
+
+            self.status_cb(f"正在听系统声音…（{chosen.name}）")
+            block = int(self.capture_rate * 0.1)
             try:
-                rec.__exit__(None, None, None)
-            except Exception:
-                pass
+                while self.running:
+                    try:
+                        data = rec.record(numframes=block)
+                    except Exception as e:
+                        self.error_cb(f"内录读取失败：{type(e).__name__}: {e}")
+                        break
+                    if data is None:
+                        continue
+                    arr = np.asarray(data, dtype=np.float32)
+                    mono = arr[:, 0] if arr.ndim == 2 else arr
+                    mono = np.clip(mono, -0.98, 0.98)
+                    self.current_level = float(np.sqrt(np.mean(np.square(mono))))
+                    self.segmenter.feed(np.ascontiguousarray(mono, dtype=np.float32))
+            finally:
+                try:
+                    rec.__exit__(None, None, None)
+                except Exception:
+                    pass
+        finally:
+            if needs_com:
+                _com_uninit()
 
     # ---------------- 识别 ----------------
     def _asr_loop(self):
