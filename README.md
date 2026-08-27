@@ -150,6 +150,18 @@ The GUI now has a **“识别模型” model dropdown** so you can switch the AS
 compare results interactively (default is `small.en`; larger models are more
 accurate but slower).
 
+### Live model switching & console logs
+
+- **Model switching is live.** Changing the **“识别模型” dropdown while running**
+  takes effect at the next idle moment (the app reloads that model; larger models
+  pause briefly while loading). If the app is not running, the choice applies to
+  the next start.
+- **Console log:** the black terminal window opened by `启动同声传译.bat` prints a
+  timestamped event log — model load/ready/switch, recognition text, translation
+  backend and latency, and every UI action (start/stop, source/device/model change,
+  sensitivity, voice toggle, clear). Use this to see what the app is doing in real
+  time.
+
 For more accurate technical terminology, use `--model small.en`:
 
 ```bat

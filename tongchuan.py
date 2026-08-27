@@ -27,6 +27,14 @@ import numpy as np
 # 系统内录（WASAPI loopback）在空闲/断续时会产生大量良性警告，压掉以免刷屏。
 warnings.filterwarnings("ignore", message=".*data discontinuity in recording.*")
 
+
+def clog(msg: str):
+    """把事件打印到控制台（启动 bat 打开的窗口），供用户实时观察。"""
+    try:
+        print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
+    except Exception:
+        pass
+
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -389,9 +397,20 @@ class Pipeline:
         self._system_thread = None
         self.running = False
         self.model = None
+        self.current_model = model_size
+        self._model_change_pending: str | None = None
         self.tts = TtsPlayer(voice, enabled=voice_enabled)
         self.current_level = 0.0
         self.segments_count = 0
+
+    def request_model_change(self, model: str):
+        """运行中切换识别模型；不在运行时就记下，下次启动生效。"""
+        if self.running:
+            self._model_change_pending = model
+            clog(f"已请求切换识别模型 -> {model}（下一次空闲时生效）")
+        else:
+            self.model_size = model
+            clog(f"识别模型设为 -> {model}（下次启动生效）")
 
     # ---------------- 生命周期 ----------------
     def start(self):
@@ -563,15 +582,34 @@ class Pipeline:
     # ---------------- 识别 ----------------
     def _asr_loop(self):
         self.status_cb("正在加载语音模型（首次约 10~20 秒）…")
+        clog(f"开始加载识别模型 -> {self.model_size}")
         try:
             self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
         except Exception as e:
             self.error_cb(f"语音模型加载失败：{e}")
+            clog(f"模型加载失败：{type(e).__name__}: {e}")
             self.running = False
             return
+        self.current_model = self.model_size
         self.status_cb("模型就绪，正在听…")
+        clog(f"模型就绪 -> {self.current_model}")
 
         while self.running:
+            # 运行中切换模型：在空闲时（拿到下一段之前）重载
+            if self._model_change_pending and self._model_change_pending != self.current_model:
+                new = self._model_change_pending
+                self._model_change_pending = None
+                self.status_cb(f"正在切换模型到 {new}…")
+                clog(f"正在切换模型 -> {new}")
+                try:
+                    self.model = WhisperModel(new, device="cpu", compute_type="int8")
+                    self.current_model = new
+                    self.model_size = new
+                    self.status_cb(f"已切换到模型 {new}，继续听…")
+                    clog(f"已切换模型 -> {new}")
+                except Exception as e:
+                    self.error_cb(f"切换模型失败：{type(e).__name__}: {e}")
+                    clog(f"切换模型失败：{type(e).__name__}: {e}")
             try:
                 seg, dur = self.segmenter.out_q.get(timeout=0.5)
             except queue.Empty:
@@ -591,6 +629,7 @@ class Pipeline:
                     t0 = time.time()
                     self._asr_q.put((text, t0))
                     self.log_cb("EN", text)
+                    clog(f"识别(EN): {text}")
             except Exception as e:
                 self.error_cb(f"识别出错：{type(e).__name__}: {e}")
 
@@ -619,6 +658,8 @@ class Pipeline:
                 "err": err, "t0": t0,
                 "latency": time.time() - t0,
             })
+            lag = time.time() - t0
+            clog(f"翻译({backend}) 延迟 {lag:.1f}s: {zh}")
 
 
 # ----------------------------------------------------------------------------
@@ -830,6 +871,7 @@ class GUI:
                                               "large-v3-turbo", "large-v3"],
                                       width=16, state="readonly")
         self.model_box.pack(side="left", padx=(0, 2))
+        self.model_box.bind("<<ComboboxSelected>>", self._on_model)
         tk.Label(ctrl, text="[越大越准但越慢；大模型建议配合文件模式]", bg="#f4f6fb",
                  fg="#9ca3af", font=("Microsoft YaHei UI", 9)).pack(side="left")
 
@@ -907,7 +949,16 @@ class GUI:
             self.device_box.current(items.index(sel_label))
 
     def _on_source(self, event=None):
+        clog(f"声音来源 -> {self.source_var.get()}")
         self._refresh_devices()
+
+    def _on_model(self, event=None):
+        m = self.model_var.get()
+        clog(f"识别模型选择 -> {m}")
+        if self.pipeline:
+            self.pipeline.request_model_change(m)
+        else:
+            clog("尚未启动，将在下次开始生效")
 
     def _selected_device(self):
         try:
@@ -922,11 +973,14 @@ class GUI:
             if self.pipeline and getattr(self.pipeline, "running", False):
                 self.pipeline.stop()
                 self.start_btn.configure(text="▶ 开始")
+                clog(">>> 停止")
             else:
+                clog(">>> 开始")
                 self._build_pipeline()
                 self.start_btn.configure(text="■ 停止")
                 self.logger = MarkdownLogger.auto()
                 self._show_hint(f"记录将保存到：{self.logger.path}")
+                clog(f"Markdown 记录 -> {self.logger.path}")
                 self._start_time = time.time()
                 self._no_seg_warned = False
                 self._last_count = 0
@@ -953,6 +1007,7 @@ class GUI:
         )
 
     def clear(self):
+        clog(">>> 清屏")
         self.en_var.set("等待说话…")
         self.zh_var.set("")
         self.log.configure(state="normal")
@@ -961,6 +1016,7 @@ class GUI:
 
     def _on_voice(self):
         on = self.voice_var.get()
+        clog(f"中文语音播报 -> {'开' if on else '关'}")
         if self.pipeline:
             self.pipeline.voice_enabled = on
             if self.pipeline.tts:
@@ -968,6 +1024,7 @@ class GUI:
         self.status_var.set("中文语音播报：开" if on else "中文语音播报：关")
 
     def _on_sens(self, val):
+        clog(f"灵敏度 -> {float(val):.1f}")
         self.sens_val.configure(text=f"{float(val):.1f}")
         if self.pipeline:
             self.pipeline.sensitivity = float(val)
