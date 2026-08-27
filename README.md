@@ -1,85 +1,177 @@
-# 同声传译 · 麦克风实时翻译
+# live-interpreter
 
-给英文课堂用的**电脑麦克风实时转译**小工具：把老师说的英文实时显示成中英双语字幕，并可选地**用中文语音读出来**。
+A lightweight, real-time **English → Chinese** interpreter that runs on your own
+computer's microphone. It listens to speech, transcribes it locally, translates
+it into Chinese, and can read the translation aloud — while saving the whole
+session to a Markdown file so you can review it later.
 
-完整链路（识别在本机离线运行，翻译/语音需联网）：
+> **Status: actively maintained & under development.**
+> This project is being improved continuously. Features, behavior, and the CLI
+> may change between versions. Feedback and bug reports are welcome.
+
+## Why this project
+
+The original motivation was being unable to follow an English-language lecture in
+real time. This tool is designed to **help you study English course materials —
+recorded lectures, audio, or video files — instead of relying only on a live
+classroom where you either miss the flow or fall behind.**
+
+Give it a recording or a lecture audio, and it produces **bilingual
+English/Chinese subtitles** you can read and keep. For live use, you can also
+point it at your microphone to get near-real-time captions and (optionally)
+spoken Chinese.
+
+## Pipeline
 
 ```
-麦克风 → 英文识别(faster-whisper，本地) → 中文翻译(DeepSeek) → 可选中文语音(edge-tts)
+Microphone / audio file
+  → English transcription (faster-whisper, offline)
+  → Chinese translation (DeepSeek, or a free fallback)
+  → on-screen captions + optional spoken Chinese (edge-tts)
+  → Markdown transcript
 ```
 
-## 一、快速开始
+## Features
 
-1. 双击 **`启动同声传译.bat`**（之后会打开一个界面窗口）。
-2. 在界面里：
-   - “麦克风”下拉框选你的麦克风（默认已自动选系统默认麦克风）；
-   - 点 **`▶ 开始`**。
-3. 说一句英文，屏幕会依次显示**英文原文**和**中文翻译**；同时会**自动写入一个 markdown 文件**（在 `transcripts\` 文件夹里，文件名带时间戳，例如 `同声传译_20260827_183419.md`），方便课后回看。每次点击“开始”会新建一个文件。
-4. 勾选/取消“**中文语音播报**”可开关中文语音。
-5. “灵敏度”滑块：调低更灵敏（安静环境也能识别说话），调高更稳（噪音大时不误触发）。
+- **Local, offline speech recognition** — the Whisper model is cached on your
+  machine, so the ASR step works without internet.
+- **Reliable speech segmentation with silero VAD** — ignores background noise
+  and only splits on real speech (this was key to making it work with a hot mic).
+- **Live microphone mode** — a GUI with on-screen bilingual captions, a live
+  input level meter, and an optional Chinese voice.
+- **Offline file mode** — transcribe and translate an audio/video file, then save
+  a full Markdown transcript.
+- **Pluggable translation** — DeepSeek by default (auto-read from your local
+  config or `.env`), with a Google Translate free fallback, and "original only"
+  as a last resort.
+- **Automatic Markdown logs** — every live session appends timestamped
+  EN/ZH lines to `transcripts/tongchuan_YYYYMMDD_HHMMSS.md`.
+- **Easy setup** — a one-click installer and a launcher for Windows.
 
-> 首次启动加载语音模型约需 10~20 秒，之后秒开（模型已缓存到本机）。
->
-> 界面上方有一条**音量条 + 状态**（“待机” / “检测到声音”）：它能实时反映麦克风有没有采到声音。音量条几乎不动 = 麦克风没采到；音量条一直很高却不出字幕 = 麦克风把底噪当成了说话（可调高“灵敏度”，或运行 `tongchuan.py --test-mic` 自检）。程序用**人声 VAD**（silero）区分人声和底噪，只对真正的说话切句。
+## Requirements
 
-## 二、如果没有网络 / 不想联网
+- Windows (developed on Windows 10/11, Chinese locale)
+- Python 3.10+ (3.13 tested)
+- Internet for the translation and voice steps (ASR itself works offline)
+- A working microphone, and **internet** if you want the spoken Chinese output
 
-- **识别（听写英文）完全离线**，模型已缓存到本机，上课时可用。
-- **中文翻译默认走 DeepSeek**（key 会自动从你电脑的 Codex 配置读取）。没网络或 key 失效时，会尝试 Google 免费接口；再不行就只显示英文原文并提示。
-- **中文语音**依赖 edge-tts（微软接口），需联网。
+## Quick start (Windows)
 
-## 三、想翻译得更准 / 更专业
+1. **Install once:**
 
-- 界面默认用 `base.en` 模型（响应快）。若术语多、想要更高准确率，可换 `small.en` 或 `medium.en`（更慢但更准），用命令行：
+   ```bat
+   安装同声传译.bat
+   ```
+
+2. **Run the app:**
+
+   ```bat
+   启动同声传译.bat
+   ```
+
+3. Pick your microphone, press **Start**, and speak. The English and Chinese
+   captions appear on screen, and a Markdown file is written to `transcripts\`.
+
+> The first start downloads the Whisper model (about 10–20 seconds); it is cached
+> afterwards.
+
+## Usage
+
+### GUI (default)
+
+```bat
+.venv\Scripts\python.exe tongchuan.py
+```
+
+### Console mode
+
+```bat
+.venv\Scripts\python.exe tongchuan.py --console
+```
+
+### Translate an audio/video file
+
+This is the recommended way to study English learning materials:
+
+```bat
+.venv\Scripts\python.exe tongchuan.py --file "lecture.mp3" --save
+```
+
+The results are printed to the console and, with `--save`, written to
+`transcripts\` as a Markdown file.
+
+### Useful options
+
+```text
+--model base.en|small.en|medium.en   Whisper model size (default: base.en)
+--voice / --no-voice                 Enable / disable spoken Chinese
+--sensitivity N                      Mic sensitivity (1–8, default 3)
+--list-devices                       List available microphones
+--test-mic                           Self-test each microphone's level
+--save                               (with --file) save a Markdown transcript
+```
+
+For more accurate technical terminology, use `--model small.en`:
 
 ```bat
 .venv\Scripts\python.exe tongchuan.py --model small.en
 ```
 
-- 识别偶尔把单词断开（如 `Re-enforcement`）是 `base.en` 的正常现象，换 `small.en` 会明显改善。
+## Translation backend & API key
 
-## 四、命令行用法（可选）
+Translation uses **DeepSeek** (an OpenAI-compatible endpoint) by default. The API
+key is **never stored in this repository**. It is read in this order:
 
-```bat
-:: 图形界面（默认）
-.venv\Scripts\python.exe tongchuan.py
+1. Environment variable `DEEPSEEK_API_KEY` or `OPENAI_API_KEY`
+2. The local `~/.codex/config.toml` file's `experimental_bearer_token` (a
+   convenience for this author's machine)
+3. A `.env` file in the project directory (`DEEPSEEK_API_KEY=sk-xxxx`) — this is
+   the portable, documented way
 
-:: 控制台模式（纯文字，无窗口）
-.venv\Scripts\python.exe tongchuan.py --console
+If no key is available (or DeepSeek is unreachable), it falls back to a free
+Google Translate endpoint, and finally shows the original English only.
 
-:: 识别一个音频文件并翻译保存
-.venv\Scripts\python.exe tongchuan.py --file 录音.mp3 --save
+To change the model or endpoint, edit `translation.py`.
 
-:: 列出所有麦克风设备
-.venv\Scripts\python.exe tongchuan.py --list-devices
+## Privacy
+
+- Microphone/audio is processed **locally** for recognition and is never
+  uploaded.
+- Only the **recognized English text** is sent to DeepSeek for translation, under
+  your own account.
+- Spoken output uses Microsoft's `edge-tts` service.
+
+## Troubleshooting
+
+- **"Cannot open microphone":** check Windows **Settings → Privacy → Microphone**,
+  or try a different device from the dropdown.
+- **Captions never appear:** the level meter near the top is the first thing to
+  check. If it barely moves, the microphone isn't capturing audio. If it is high
+  but nothing is transcribed, the background noise is being mistaken for speech —
+  raise **Sensitivity**, or run `--test-mic` and pick a device with a sane level.
+- **No spoken Chinese:** confirm the system output device works and that voice is
+  enabled.
+- **Reinstall / move to another machine:** run `安装同声传译.bat` (needs internet;
+  it creates the environment, installs dependencies, and downloads the model).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## 中文简介
+
+一个在你电脑上跑的**实时英→中同声传译**小工具：用麦克风听写英文，本地离线识别，
+翻译为中文，可中文语音朗读，并自动保存为 Markdown。**最适合拿英语学习资料（录音、
+视频、音频）来做双语字幕学习**，而不是只能靠现场课堂硬跟。核心依赖：`faster-whisper`
+（离线识别）、`DeepSeek`（翻译，key 不写进仓库）、`edge-tts`（中文语音）。
+
+> 本项目**仍在维护和改进中**，功能与命令可能随版本变化，欢迎反馈。
+
+```
+双击 安装同声传译.bat   # 首次安装（需联网）
+双击 启动同声传译.bat   # 启动界面
 ```
 
-## 五、翻译后端与密钥
-
-翻译优先使用 **DeepSeek**（OpenAI 兼容接口）。密钥按顺序读取，**不需要写进代码**：
-
-1. 环境变量 `DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`
-2. 本机 `~/.codex/config.toml` 里的 `experimental_bearer_token`（你已配置，直接可用）
-3. 项目目录下 `.env`（手动创建，内容 `DEEPSEEK_API_KEY=sk-xxxx`，已加入 `.gitignore`）
-
-想改模型/地址可编辑 `translation.py` 里的 `base_url` / `model`（当前 `model = deepseek-chat`）。
-
-## 六、隐私说明
-
-- 麦克风音频**只在本机**用于识别，不会上传。
-- 只有识别出的**英文文本**会发给 DeepSeek 做翻译（用你自己的 DeepSeek 账号）。
-- 语音合成调用微软 edge-tts 接口。
-
-## 七、常见问题
-
-- **点开始提示“无法打开麦克风”**：系统“设置 → 隐私 → 麦克风”是否允许访问；或换个麦克风。
-- **中文一直不显示，提示翻译失败**：多半没网或 DeepSeek 连不上；可先确认网络，或用 `.env` 配 key。
-- **语音没声音**：确认系统默认播放设备正常、未静音，且勾选“中文语音播报”。
-- **重装/换电脑**：双击 **`安装同声传译.bat`**（需联网，自动建环境、装依赖、下载模型）。
-
-- **完全没反应 / 看音量条**：先点“开始”，等模型就绪后看上方音量条：不动 → 麦克风没采到（检查设备/隐私权限）；很高但不出字幕 → 底噪被误判，调高“灵敏度”或换麦克风；正常但没字幕 → 用 `--test-mic` 自检并换一个电平适中的设备。
-
-## 八、记录文件
-
-- 实时运行（图形界面/控制台）时会**边说话边追加写入** `transcripts\同声传译_日期_时间.md`，中英文带时间戳同步记录。
-- 用 `--file 音频.mp3 --save` 识别单个文件时，也会在 `transcripts\` 生成完整 markdown 稿件。
+更详细的中文使用说明可查看历史版本或提交 issue。
