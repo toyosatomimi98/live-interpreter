@@ -9,6 +9,10 @@ session to a Markdown file so you can review it later.
 > This project is being improved continuously. Features, behavior, and the CLI
 > may change between versions. Feedback and bug reports are welcome.
 
+## Preview
+
+![Live English→Chinese simultaneous interpretation demo](docs/demo.png)
+
 ## Why this project
 
 The original motivation was being unable to follow an English-language lecture in
