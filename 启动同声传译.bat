@@ -2,6 +2,7 @@
 chcp 65001 >nul
 setlocal
 set PYTHONUTF8=1
+set HF_HUB_DISABLE_SYMLINKS_WARNING=1
 cd /d "%~dp0"
 set PYTHONPATH=%CD%
 

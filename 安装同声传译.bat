@@ -2,6 +2,7 @@
 chcp 65001 >nul
 setlocal
 set PYTHONUTF8=1
+set HF_HUB_DISABLE_SYMLINKS_WARNING=1
 cd /d "%~dp0"
 
 echo [1/3] Creating virtual environment...
@@ -21,8 +22,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [3/3] Downloading whisper model (base.en)...
-".venv\Scripts\python.exe" -c "from faster_whisper import WhisperModel; WhisperModel('base.en', device='cpu', compute_type='int8'); print('model ready')"
+echo [3/3] Downloading whisper model (small.en)...
+".venv\Scripts\python.exe" -c "from faster_whisper import WhisperModel; WhisperModel('small.en', device='cpu', compute_type='int8'); print('model ready')"
 
 echo.
 echo Done. Double-click "启动同声传译.bat" to run.

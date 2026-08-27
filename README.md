@@ -226,6 +226,11 @@ To change the model or endpoint, edit `translation.py`.
   raise **Sensitivity**, or run `--test-mic` and pick a device with a sane level.
 - **No spoken Chinese:** confirm the system output device works and that voice is
   enabled.
+- **First use shows `symlinks` and `unauthenticated requests to HF Hub` warnings:**
+  these are benign — the model is downloading/caching on first use; the symlinks
+  note is just how `huggingface_hub` caches on Windows. It is suppressed by default
+  in the launchers (`HF_HUB_DISABLE_SYMLINKS_WARNING=1`); you can also set that env
+  var yourself.
 - **Only the first sentence is translated, then nothing (meter stays “待机”):**
   this is usually a *source* reliability problem, not a bug in the pipeline. The
   app translates speech continuously when it receives clean audio. If you are on
