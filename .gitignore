@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# 虚拟环境 / 运行时
+.venv/
+venv/
+
+# 本地敏感配置（key 不进入仓库）
+.env
+.env.*
+.env.local
+.codex/
+.agents/
+
+# 运行产物：录音记录 / 临时音频 / 日志
+transcripts/
+_tmp/
+录音稿_*.md
+tiche_*.mp3
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.log
+*.log.*
+
+# 模型与本地二进制（不随仓库分发）
+*.onnx
+*.bin
+*.pt
+*.pth
+*.gguf
+
+# IDE / 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本地测试、临时文件
+_probe*.py
+_scan*.py
+_test.mp3
+*.tmp
