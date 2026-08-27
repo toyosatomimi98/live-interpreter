@@ -19,9 +19,13 @@ import queue
 import sys
 import threading
 import time
+import warnings
 from datetime import datetime
 
 import numpy as np
+
+# 系统内录（WASAPI loopback）在空闲/断续时会产生大量良性警告，压掉以免刷屏。
+warnings.filterwarnings("ignore", message=".*data discontinuity in recording.*")
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
