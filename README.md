@@ -35,6 +35,41 @@ Microphone / audio file
   → Markdown transcript
 ```
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph SRC[输入 / 来源]
+        MIC["麦克风 · sounddevice · 16kHz"]
+        SYS["系统声音内录 · soundcard · 48kHz"]
+        FILE["音频/视频文件 · --file"]
+    end
+
+    SEG["切句 Segmenter · silero VAD（能量兜底）"]
+    ASR["识别 faster-whisper<br>模型 + prompt.txt<br>（内录音频先重采样到 16kHz）"]
+    TR["翻译 DeepSeek → Google → 仅原文"]
+
+    subgraph OUT[输出]
+        GUI["界面字幕 EN/ZH + 延迟读数"]
+        MD["Markdown 记录 transcripts"]
+        LOG["控制台日志 事件/延迟/积压"]
+        TTS["中文语音 edge-tts"]
+        REC["可选录音 recordings/*.wav"]
+    end
+
+    MIC --> SEG
+    SYS --> SEG
+    FILE --> SEG
+    SEG -->|"音频段 out_q"| ASR
+    ASR -->|"识别文本 _asr_q"| TR
+    TR -->|"结果 result_q"| GUI
+    TR --> MD
+    TR --> LOG
+    TR --> TTS
+    SYS --> REC
+    MIC --> REC
+```
+
 ## Features
 
 - **Local, offline speech recognition** — the Whisper model is cached on your
