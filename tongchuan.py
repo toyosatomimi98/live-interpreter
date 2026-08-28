@@ -373,7 +373,7 @@ class Segmenter:
 class Pipeline:
     def __init__(self, model_size="base.en", voice_enabled=True,
                  voice="zh-CN-XiaoxiaoNeural", device=None, sensitivity=3.0,
-                 source="mic", save_audio=False,
+                 source="mic", save_audio=False, max_seg=10.0,
                  status_cb=None, segment_cb=None, error_cb=None, log_cb=None):
         self.model_size = model_size
         self.voice_enabled = voice_enabled
@@ -382,6 +382,7 @@ class Pipeline:
         self.sensitivity = sensitivity
         self.source = source
         self.save_audio = save_audio
+        self.max_seg = max_seg
         self.capture_rate = 48000 if source == "system" else SAMPLE_RATE
         self.status_cb = status_cb or (lambda *a, **k: None)
         self.segment_cb = segment_cb or (lambda *a, **k: None)
@@ -389,7 +390,8 @@ class Pipeline:
         self.log_cb = log_cb or (lambda *a, **k: None)
 
         self.translator = Translator()
-        self.segmenter = Segmenter(sample_rate=self.capture_rate, sensitivity=sensitivity)
+        self.segmenter = Segmenter(sample_rate=self.capture_rate, sensitivity=sensitivity,
+                                   max_seg=max_seg)
         self.asr_prompt = load_asr_prompt()
         self.result_q: "queue.Queue[tuple]" = queue.Queue()
         self._asr_q: "queue.Queue[tuple]" = queue.Queue()
@@ -835,10 +837,12 @@ class GUI:
         self.en_var = tk.StringVar(value="等待说话…")
         self.zh_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="就绪")
+        self.lat_var = tk.StringVar(value="延迟 --")
         self.voice_var = tk.BooleanVar(value=opts.voice_enabled)
         self.rec_var = tk.BooleanVar(value=False)
         self.source_var = tk.StringVar(value="麦克风")
         self.model_var = tk.StringVar(value=opts.model)
+        self.maxseg_var = tk.StringVar(value="10")
         self.device_var = tk.StringVar()
         self.skip_tts = threading.Lock()
         self.ui_q: "queue.Queue[tuple]" = queue.Queue()
@@ -867,6 +871,9 @@ class GUI:
         self.meter_label = tk.Label(meter_row, text="待机", bg="#f4f6fb", fg="#9ca3af",
                                     font=("Microsoft YaHei UI", 10), width=16, anchor="e")
         self.meter_label.pack(side="left")
+        self.lat = tk.Label(meter_row, textvariable=self.lat_var, bg="#f4f6fb", fg="#dc2626",
+                            font=("Microsoft YaHei UI", 10, "bold"))
+        self.lat.pack(side="left", padx=(10, 0))
 
         en_card = tk.Frame(self.root, bg="#ffffff", highlightbackground="#e1e6f0",
                            highlightthickness=1)
@@ -941,6 +948,13 @@ class GUI:
         self.sens_scale.pack(side="left", fill="x", expand=True, padx=(0, 12))
         self.sens_val = tk.Label(sens_row, text="3.0", bg="#f4f6fb", font=("Microsoft YaHei UI", 10))
         self.sens_val.pack(side="left")
+
+        tk.Label(sens_row, text="分段上限：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
+        self.maxseg_box = ttk.Combobox(sens_row, textvariable=self.maxseg_var,
+                                       values=["4", "6", "8", "10"], width=4, state="readonly")
+        self.maxseg_box.pack(side="left", padx=(0, 2))
+        tk.Label(sens_row, text="秒/段 [小=快但更易切断]", bg="#f4f6fb", fg="#9ca3af",
+                 font=("Microsoft YaHei UI", 9)).pack(side="left")
 
         # 记录
         tk.Label(self.root, text="记录", bg="#f4f6fb", fg="#6b7280",
@@ -1056,6 +1070,7 @@ class GUI:
             voice_enabled=self.voice_var.get(),
             source=source,
             save_audio=self.rec_var.get(),
+            max_seg=float(self.maxseg_var.get()),
             device=self._selected_device(),
             sensitivity=float(self.sens_scale.get()),
             status_cb=lambda s: self.ui_q.put(("status", s)),
@@ -1166,6 +1181,9 @@ class GUI:
         en = item.get("en", "")
         zh = item.get("zh", "")
         backend = item.get("backend", "")
+        lat = item.get("latency")
+        if isinstance(lat, (int, float)):
+            self.lat_var.set(f"延迟 {lat:.1f}s")
         self.en_var.set(en)
         if zh:
             self.zh_var.set(zh)

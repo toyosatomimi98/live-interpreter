@@ -185,6 +185,15 @@ accurate but slower).
   and the per-utterance latency+queue size, so you can tell whether the pipeline is
   falling behind (e.g. a growing `待翻译` count means translation is the bottleneck).
 
+- **Latency & responsiveness.** The GUI shows the **measured end-to-end latency** of
+  the latest translation (`延迟 X.Xs`). Latency = segment-accumulation (up to the
+  **分段上限**, default 10 s) + recognition + translation. Use the **分段上限**
+  dropdown to trade speed vs. completeness: a smaller value (e.g. 4 s) responds
+  faster but can cut phrases; a larger value is more complete but adds delay.
+  On this machine, recognition roughly scales as: `base.en ≈0.6×` real-time,
+  `small.en ≈1.9×`, `medium.en ≈4.8×`, `large-v3-turbo ≈4.6×` (so large models are
+  best for file mode, not live).
+
 For more accurate technical terminology, use `--model small.en`:
 
 ```bat
