@@ -53,6 +53,14 @@ Microphone / audio file
   as a last resort.
 - **Automatic Markdown logs** — every live session appends timestamped
   EN/ZH lines to `transcripts/tongchuan_YYYYMMDD_HHMMSS.md`.
+- **Live model switching** — change the ASR model at runtime via the **识别模型**
+  dropdown (no restart needed; larger models pause briefly while loading).
+- **Record the lecture audio** — while watching on the **system sound** source,
+  optionally save what's playing to `recordings\*.wav`, so you can translate it
+  reliably later even when the platform can't be downloaded (e.g. WebLecture).
+- **Diagnostic console log & latency meter** — the launcher window prints a
+  timestamped event log plus a per-utterance latency/backlog and a 5-second
+  backlog heartbeat; the GUI shows a live **延迟 X.Xs** readout.
 - **Easy setup** — a one-click installer and a launcher for Windows.
 
 ## Requirements
@@ -165,6 +173,7 @@ The results are printed to the console and, with `--save`, written to
 --list-devices                       List available microphones
 --test-mic                           Self-test each microphone's level
 --save                               (with --file) save a Markdown transcript
+--save-audio                         Record the captured audio to recordings\*.wav
 ```
 
 The GUI now has a **“识别模型” model dropdown** so you can switch the ASR model and
@@ -190,9 +199,17 @@ accurate but slower).
   **分段上限**, default 10 s) + recognition + translation. Use the **分段上限**
   dropdown to trade speed vs. completeness: a smaller value (e.g. 4 s) responds
   faster but can cut phrases; a larger value is more complete but adds delay.
-  On this machine, recognition roughly scales as: `base.en ≈0.6×` real-time,
-  `small.en ≈1.9×`, `medium.en ≈4.8×`, `large-v3-turbo ≈4.6×` (so large models are
-  best for file mode, not live).
+
+  Measured on this machine for a ~9 s utterance:
+
+  | Model | Load | ASR time | vs. live |
+  |---|---|---|---|
+  | base.en | ~5 s | ~5 s | ≈0.6× (keeps up) |
+  | small.en | ~5 s | ~17 s | ≈1.9× (lags) |
+  | medium.en | ~17 s | ~44 s | ≈4.8× (file mode only) |
+  | large-v3-turbo | ~14 s | ~43 s | ≈4.6× (file mode only) |
+
+  So large models are best for **file mode**, not live captions.
 
 For more accurate technical terminology, use `--model small.en`:
 
