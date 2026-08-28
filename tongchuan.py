@@ -305,7 +305,7 @@ class Segmenter:
 
     def _vad_stats(self, buf):
         try:
-            ts = _get_speech_timestamps(buf, self._vad_options)
+            ts = _get_speech_timestamps(buf, self._vad_options, sampling_rate=self.sample_rate)
         except Exception:
             has = self._energy_speaking(buf)
             return has, 0, (len(buf) if has else 0)
