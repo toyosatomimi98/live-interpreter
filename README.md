@@ -221,9 +221,14 @@ If you study **Electronic & Computer Engineering** materials, two settings help 
 3. **What "Sensitivity" really does.** The Sensitivity slider only controls how
    eagerly audio is treated as speech (low = more sensitive, high = more robust
    against background noise). It does **not** affect translation quality. For more
-   accurate output, prefer a larger model and the domain prompt above. Translation
-   is already instructed to be faithful and complete (keep every detail, no
-   summarizing) and runs at temperature 0 for consistent results.
+    accurate output, prefer a larger model and the domain prompt above. Translation
+    is already instructed to be faithful and complete (keep every detail, no
+    summarizing) and runs at temperature 0 for consistent results.
+
+For ASR mishaps, the translator also infers the intended words from context and
+phonetic similarity (e.g. `messy` → `MESI`, `Barclay` → `Barkley`) and translates
+the corrected meaning, so common speech-recognition errors don't leak into the
+Chinese output.
 
 ## Translation backend & API key
 
