@@ -308,6 +308,28 @@ To change the model or endpoint, edit `translation.py`.
 - **Reinstall / move to another machine:** run `安装同声传译.bat` (needs internet;
   it creates the environment, installs dependencies, and downloads the model).
 
+## Roadmap / TODO
+
+Planned improvements (ideas only — not implemented yet). Feedback and PRs welcome.
+
+- [ ] **Courseware-aligned recognition & translation** — use your local PPT/PDF course
+  material to improve alignment between the speech translation and the slides:
+  - Phase 1 · **Glossary extraction** *(highest value, lowest effort)* — parse the
+    course files, extract the key terms / acronyms / proper nouns, and generate (a)
+    an ASR term list (`prompt.txt`) and (b) a translation glossary
+    (`term = 标准中文`) that are injected automatically.
+  - Phase 2 · **Context retrieval** — index each slide's text; when a sentence is
+    recognized, retrieve the most relevant slide and include it as translation
+    context so the wording matches the current topic.
+  - Phase 3 · **Slide mapping** — tag each translated line with the likely
+    slide/page number and timestamp in the transcript for easy review.
+- [ ] **Lower live latency** — parallelize translation, or make the segment length
+  (分段上限) adaptive to speech rate (faster speech → shorter segments).
+- [ ] **More robust system-audio (loopback) capture** — better device auto-selection and
+  a clearer on-screen hint when no speech is detected.
+- [ ] **Instant model switch** — preload the selected model in the background so
+  changing the ASR model is seamless.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
@@ -329,5 +351,7 @@ MIT — see [LICENSE](LICENSE).
 ```
 
 **来源选择建议**：学录播/视频**优先用文件模式** `--file 讲座.mp3 --save`（整段稳定翻译成双语稿）；现场实时用**麦克风**最稳；「系统声音(内录)」最方便但**最不稳定**——若只翻出第一句、或一直显示“待机”，多半是内录把音频抓成了断续/噪声，请改用文件或麦克风。
+
+> 规划中的改进（课件对齐识别/翻译、降低延迟等）见上方 “Roadmap / TODO”。
 
 更详细的中文使用说明可查看历史版本或提交 issue。
