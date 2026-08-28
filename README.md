@@ -181,7 +181,9 @@ accurate but slower).
   timestamped event log — model load/ready/switch, recognition text, translation
   backend and latency, and every UI action (start/stop, source/device/model change,
   sensitivity, voice toggle, clear). Use this to see what the app is doing in real
-  time.
+  time. It also prints a **backlog heartbeat** every 5 s (`待翻译`/`待识别`/`结果队列`)
+  and the per-utterance latency+queue size, so you can tell whether the pipeline is
+  falling behind (e.g. a growing `待翻译` count means translation is the bottleneck).
 
 For more accurate technical terminology, use `--model small.en`:
 

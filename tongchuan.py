@@ -405,6 +405,7 @@ class Pipeline:
         self.tts = TtsPlayer(voice, enabled=voice_enabled)
         self.current_level = 0.0
         self.segments_count = 0
+        self._last_metrics = 0.0
 
     def request_model_change(self, model: str):
         """运行中切换识别模型；不在运行时就记下，下次启动生效。"""
@@ -679,6 +680,12 @@ class Pipeline:
     # ---------------- 翻译 ----------------
     def _translate_loop(self):
         while True:
+            # 每 5 秒打印一次“积压心跳”，反映各队列堆积情况即使没在翻译
+            now = time.time()
+            if now - self._last_metrics >= 5.0:
+                self._last_metrics = now
+                clog(f"[积压] 待翻译={self._asr_q.qsize()} 待识别={self.segmenter.out_q.qsize()} "
+                     f"结果队列={self.result_q.qsize()} 模型={self.current_model}")
             try:
                 item = self._asr_q.get(timeout=0.5)
             except queue.Empty:
@@ -702,7 +709,8 @@ class Pipeline:
                 "latency": time.time() - t0,
             })
             lag = time.time() - t0
-            clog(f"翻译({backend}) 延迟 {lag:.1f}s: {zh}")
+            clog(f"翻译({backend}) 延迟 {lag:.1f}s | 积压:待翻={self._asr_q.qsize()} "
+                 f"待识={self.segmenter.out_q.qsize()} 待显={self.result_q.qsize()} | {zh[:24]}")
 
 
 # ----------------------------------------------------------------------------
