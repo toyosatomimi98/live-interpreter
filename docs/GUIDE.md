@@ -89,10 +89,16 @@ Recordings are stored in `recordings\` and are **gitignored**.
 ## Latency & responsiveness
 
 The GUI shows the measured end-to-end latency (`延迟 X.Xs`). Latency =
-segment-accumulation (up to the **分段上限**, default 6 s) + recognition + translation.
+ segment-accumulation (up to the **分段上限**, default 4 s) + recognition + translation.
 The **分段上限** dropdown trades speed vs. completeness (smaller = faster but can cut
 phrases). Translation runs on **parallel workers** (default 2) with ordered output,
 and the ASR prompt is kept **concise** (a huge prompt slows decoding and can drift).
+
+Measured first-utterance delay on this machine (from start of speech to first
+translation): ≈ **9 s** with `base.en` and ≈ **10 s** with `small.en` at a 5 s segment
+limit. At the default 4 s limit it is roughly 1 s lower. On CPU, real-time large
+models aren't practical; distilled Whisper models are **not** faster here (and can be
+slower), so use a **smaller 分段上限** or **`base.en`** for the lowest latency.
 
 Measured on this machine for a ~9 s utterance:
 

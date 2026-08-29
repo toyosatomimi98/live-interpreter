@@ -131,7 +131,7 @@ DEFAULT_ASR_PROMPT = (
 )
 
 
-def _merge_prompt(a: str, b: str, max_terms: int = 55) -> str:
+def _merge_prompt(a: str, b: str, max_terms: int = 35) -> str:
     """合并两份词表，优先 b（课程词），去重并限量，避免 prompt 过长拖慢识别。"""
     def parts(s: str):
         return [p.strip() for p in s.replace("\n", " ").split(",") if p.strip()]
@@ -363,7 +363,7 @@ class Segmenter:
 class Pipeline:
     def __init__(self, model_size="base.en", voice_enabled=True,
                  voice="zh-CN-XiaoxiaoNeural", device=None, sensitivity=3.0,
-                 source="mic", save_audio=False, max_seg=6.0, translation_workers=2,
+                 source="mic", save_audio=False, max_seg=4.0, translation_workers=2,
                  course_file=None,
                  status_cb=None, segment_cb=None, error_cb=None, log_cb=None):
         self.model_size = model_size
@@ -771,7 +771,7 @@ class Pipeline:
         self._last_section = best
         title, body = self.course_sections[best]
         self._last_section_title = title
-        return f"[{title}] {body[:800]}", title
+        return f"[{title}] {body[:500]}", title
 
 
 # ----------------------------------------------------------------------------
@@ -903,7 +903,7 @@ class GUI:
         self.rec_var = tk.BooleanVar(value=False)
         self.source_var = tk.StringVar(value="麦克风")
         self.model_var = tk.StringVar(value=opts.model)
-        self.maxseg_var = tk.StringVar(value="6")
+        self.maxseg_var = tk.StringVar(value="4")
         self.course_var = tk.StringVar(value="(无课件)")
         self.device_var = tk.StringVar()
         self.skip_tts = threading.Lock()
