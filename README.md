@@ -311,6 +311,18 @@ See [docs/sample-courseware.md](docs/sample-courseware.md) for the expected form
 .venv\Scripts\python.exe tongchuan.py --course docs\sample-courseware.md
 ```
 
+### Convert PDF/PPT to courseware Markdown
+
+If you have the slides as PDF/PPTX, convert them first:
+
+```bat
+.venv\Scripts\python.exe convert_courseware.py "slides.pdf" --course "计算机组成原理"
+```
+
+It writes `courseware\<课程名>.md`, split into per-page sections and (with a DeepSeek
+key) auto-fills a `## 术语表` for acronyms. Edit it to add lowercase technical
+phrases (e.g. `store buffer`, `cache coherence`) that the auto-extract misses.
+
 Measured effect on `base.en` (sample hardware/memory sentence):
 
 | | Without courseware | With courseware |
