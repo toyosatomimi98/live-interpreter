@@ -302,10 +302,14 @@ GUI **课程课件** dropdown) and the app extracts a **glossary** that:
    more likely recognized — and homophones get corrected (e.g. `MESI`, not `messy`);
 2. injects a **translation glossary** (`term = 标准中文`) so the Chinese output uses
    the same wording as your handout.
+3. **retrieves the most relevant courseware page** for each recognized sentence and
+   feeds it as translation context (keyword-overlap retrieval with stay-put
+   smoothing), so wording matches the slide being discussed (Phase 2).
 
 See [docs/sample-courseware.md](docs/sample-courseware.md) for the expected format
-(front-matter + a `## 术语表` table + sectioned body). Put your own courses in
-`courseware\` (gitignored).
+(front-matter + a `## 术语表` table + sectioned body). The glossary extractor also
+auto-detects multi-word technical phrases (e.g. `store buffer`, `cache coherence`)
+and hyphenated terms. Put your own courses in `courseware\` (gitignored).
 
 ```bat
 .venv\Scripts\python.exe tongchuan.py --course docs\sample-courseware.md
@@ -393,9 +397,10 @@ Planned improvements (ideas only — not implemented yet). Feedback and PRs welc
     course **Markdown**, extract the key terms / acronyms / proper nouns, and
     generate (a) an ASR term list (`prompt.txt`) and (b) a translation glossary
     (`term = 标准中文`) that are injected automatically.
-  - Phase 2 · **Context retrieval** — index each slide's text; when a sentence is
-    recognized, retrieve the most relevant slide and include it as translation
-    context so the wording matches the current topic.
+  - [x] Phase 2 · **Context retrieval** — index each slide's text; when a sentence is
+    recognized, retrieve the most relevant slide (keyword overlap, with stay-put
+    smoothing) and include it as translation context so the wording matches the
+    current topic.
   - Phase 3 · **Slide mapping** — tag each translated line with the likely
     slide/page number and timestamp in the transcript for easy review.
 - [ ] **Lower live latency** — parallelize translation, or make the segment length

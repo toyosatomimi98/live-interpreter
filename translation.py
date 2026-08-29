@@ -109,6 +109,7 @@ class Translator:
         self.model = model
         self.system_prompt = system_prompt or ECE_SYSTEM_PROMPT
         self.glossary = glossary
+        self.context = ""  # 可选：当前讲义背景（页面文本）
         self.last_backend = "none"
         self.last_error = ""
 
@@ -116,6 +117,8 @@ class Translator:
         content = self.system_prompt
         if self.glossary:
             content += ("\n\n术语表（翻译时请优先使用这些标准译法）:\n" + self.glossary)
+        if self.context:
+            content += ("\n\n当前讲义背景（据此理解语境，术语以其为准）:\n" + self.context)
         body = json.dumps({
             "model": self.model,
             "messages": [

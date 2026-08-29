@@ -396,11 +396,14 @@ class Pipeline:
                                    max_seg=max_seg)
         self.asr_prompt = load_asr_prompt()
         self.course_name = ""
+        self.course_sections: "list[tuple[str, str]]" = []
+        self._last_section = None
         if course_file:
             try:
                 import courseware as _cw
                 course = _cw.load_course(course_file)
                 self.course_name = course.name
+                self.course_sections = _cw.load_sections(course_file)
                 # 识别热词 = 内置词表 + 课件术语
                 extra = _cw.asr_prompt(course)
                 if extra:
@@ -410,7 +413,7 @@ class Pipeline:
                 if gl:
                     self.translator.glossary = gl
                 clog(f"已加载课程课件：{course.name}（术语 {len(course.terms)} 条，"
-                     f"译法 {len(course.glossary)} 条）")
+                     f"译法 {len(course.glossary)} 条，分节 {len(self.course_sections)} 页）")
             except Exception as e:
                 clog(f"课程课件加载失败：{type(e).__name__}: {e}")
         self.result_q: "queue.Queue[tuple]" = queue.Queue()
@@ -717,6 +720,7 @@ class Pipeline:
             if item is None:
                 break
             en_text, t0 = item
+            self.translator.context = self._retrieve_context(en_text)
             try:
                 zh = self.translator.translate(en_text)
                 backend = self.translator.last_backend
@@ -733,6 +737,27 @@ class Pipeline:
             lag = time.time() - t0
             clog(f"翻译({backend}) 延迟 {lag:.1f}s | 积压:待翻={self._asr_q.qsize()} "
                  f"待识={self.segmenter.out_q.qsize()} 待显={self.result_q.qsize()} | {zh[:24]}")
+
+    def _retrieve_context(self, text: str) -> str:
+        """用关键词重叠检索当前最相关的课件页，作为翻译上下文。"""
+        if not self.course_sections:
+            return ""
+        import re as _re
+        words = set(_re.findall(r"[a-z0-9-]{2,}", text.lower()))
+        scores = []
+        for title, body in self.course_sections:
+            low = (title + " " + body).lower()
+            scores.append(sum(1 for w in words if w in low))
+        if not scores or max(scores) == 0:
+            return ""
+        best = max(range(len(scores)), key=lambda i: scores[i])
+        # 平滑：若上次命中的邻页分数接近，则停留，避免频繁跳页
+        prev = self._last_section
+        if prev is not None and abs(prev - best) <= 1 and scores[best] < scores[prev] + 3:
+            best = prev
+        self._last_section = best
+        title, body = self.course_sections[best]
+        return f"[{title}] {body[:800]}"
 
 
 # ----------------------------------------------------------------------------

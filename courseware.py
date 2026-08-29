@@ -76,6 +76,22 @@ def _collect_terms(text: str) -> list[str]:
         terms.add(t.strip())
     for t in re.findall(r"\*\*([^*\n]{2,40})\*\*", text):
         terms.add(t.strip())
+    # 连字符复合词：write-combining / non-temporal / out-of-order
+    for t in re.findall(r"\b[A-Za-z]+(?:-[A-Za-z]+)+\b", text):
+        terms.add(t)
+    # 后缀启发：XXX buffer / cache / ordering / coherence / conflict / barrier / protocol ...
+    SUFFIXES = ("buffer", "cache", "coherence", "ordering", "conflict", "barrier",
+                "protocol", "hierarchy", "prefetch", "prediction", "throughput",
+                "bandwidth", "storage", "thread", "memory", "latency")
+    STOP = {"the", "a", "an", "to", "of", "in", "and", "is", "are", "for", "on",
+            "with", "as", "this", "that", "it", "by", "from"}
+    pat = re.compile(r"([A-Za-z][A-Za-z0-9\-]*(?:\s+[A-Za-z][A-Za-z0-9\-]*){0,2})\s+("
+                     + "|".join(SUFFIXES) + r")\b", re.I)
+    for m in pat.finditer(text):
+        phrase = m.group(0).strip()
+        first = phrase.split()[0].lower()
+        if first not in STOP and len(phrase.split()) >= 1:
+            terms.add(phrase)
     return sorted(terms)
 
 
@@ -106,6 +122,23 @@ def asr_prompt(course: Course) -> str:
 def glossary_text(course: Course) -> str:
     pairs = [f"{en} = {zh}" for en, zh in course.glossary if en and zh]
     return "; ".join(pairs)
+
+
+def load_sections(path: str) -> list[tuple[str, str]]:
+    """把课程 Markdown 按 `## 标题` 切成 (标题, 正文) 段落，用于上下文检索。"""
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    # 去掉 front-matter
+    text = re.sub(r"^---\n.*?\n---\n", "", text, flags=re.S)
+    parts = re.split(r"^##\s+(.+)$", text, flags=re.M)
+    out = []
+    # parts = [pre, title1, body1, title2, body2, ...]
+    for i in range(1, len(parts) - 1, 2):
+        title = parts[i].strip()
+        body = parts[i + 1].strip()
+        if body and not re.search(r"术语表|Glossary|词汇表", title, re.I):
+            out.append((title, body))
+    return out
 
 
 if __name__ == "__main__":
