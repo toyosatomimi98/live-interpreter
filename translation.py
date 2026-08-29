@@ -109,16 +109,15 @@ class Translator:
         self.model = model
         self.system_prompt = system_prompt or ECE_SYSTEM_PROMPT
         self.glossary = glossary
-        self.context = ""  # 可选：当前讲义背景（页面文本）
         self.last_backend = "none"
         self.last_error = ""
 
-    def _deepseek(self, text: str) -> str:
+    def _deepseek(self, text: str, context: str = "") -> str:
         content = self.system_prompt
         if self.glossary:
             content += ("\n\n术语表（翻译时请优先使用这些标准译法）:\n" + self.glossary)
-        if self.context:
-            content += ("\n\n当前讲义背景（据此理解语境，术语以其为准）:\n" + self.context)
+        if context:
+            content += ("\n\n当前讲义背景（据此理解语境，术语以其为准）:\n" + context)
         body = json.dumps({
             "model": self.model,
             "messages": [
@@ -154,7 +153,7 @@ class Translator:
         self.last_error = ""
         return out
 
-    def translate(self, text: str) -> str:
+    def translate(self, text: str, context: str = "") -> str:
         """返回中文翻译；全部后端失败时抛异常。"""
         text = (text or "").strip()
         if not text:
@@ -163,7 +162,7 @@ class Translator:
         self.last_error = ""
         if self.api_key:
             try:
-                return self._deepseek(text)
+                return self._deepseek(text, context)
             except Exception as e:
                 self.last_error = f"deepseek: {type(e).__name__}: {e}"
         else:

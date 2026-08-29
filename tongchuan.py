@@ -21,6 +21,7 @@ import threading
 import time
 import warnings
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -107,53 +108,42 @@ CHANNELS = 1
 
 # 针对“电子与计算机工程”类英文讲课的专业词表，用作用户可覆盖的默认值。
 # 作用：作为 Whisper 的 initial_prompt，显著提升技术术语的识别准确率。
+# 注意：词表过长会拖慢解码、反而容易跑偏，因此保持精简聚焦。
 DEFAULT_ASR_PROMPT = (
-    # 信号与系统 / 电子
     "signal processing, Fourier transform, convolution, filter, sampling theorem, "
     "frequency response, Laplace transform, Z-transform, transfer function, "
-    "circuit analysis, Kirchhoff's laws, operational amplifier, transistor, CMOS, "
-    "digital logic, Boolean algebra, finite state machine, microprocessor, "
-    "digital signal processor, ADC, DAC, PWM, electromagnetics, antenna, impedance, "
-    "Nyquist, low-pass filter, digital filter, "
-    # 控制 / 机器学习 / 机器人
-    "control systems, feedback, PID controller, state-space, "
-    "machine learning, neural network, deep learning, gradient descent, "
-    "convolutional neural network, reinforcement learning, "
-    "robotics, actuator, kinematics, "
-    # 概率 / 数学
-    "probability, random variable, Gaussian distribution, expectation, "
-    "optimization, gradient, convergence, derivative, integral, "
-    "matrix, eigenvalue, eigenvector, linear time invariant, discrete time, "
-    # 计算机组成 / 硬件优化
-    "computer architecture, instruction set, ISA, microarchitecture, "
-    "pipelining, pipeline, superscalar, out-of-order execution, branch prediction, "
-    "instruction-level parallelism, vectorization, SIMD, "
-    "arithmetic logic unit, floating point unit, register file, register, "
-    "throughput, latency, bandwidth, clock cycle, clock frequency, "
-    "power consumption, energy efficiency, RISC, CISC, processor, "
-    # 存储层次 / 缓存 / 虚拟内存
-    "memory hierarchy, locality, spatial locality, temporal locality, "
-    "cache, cache hit, cache miss, cache line, cache block, "
-    "hit rate, miss rate, direct-mapped cache, set-associative, fully associative, "
-    "write-back, write-through, LRU, replacement policy, "
-    "cache coherence, coherence protocol, MESI, L1 cache, L2 cache, L3 cache, "
-    "virtual memory, page table, paging, TLB, address translation, "
-    # 并行 / 并发
-    "parallelism, parallel computing, concurrency, multithreading, thread, process, "
-    "data parallelism, task parallelism, load balancing, speedup, Amdahl's law, "
-    "embarrassingly parallel, synchronization, mutual exclusion, critical section, "
-    "deadlock, race condition, lock, semaphore, monitor, atomicity, "
-    "shared memory, distributed memory, message passing, memory consistency, "
-    "GPU computing, CUDA, OpenMP, MPI, "
-    # 计算机网络
-    "computer network, networking, packet switching, protocol, TCP, IP, UDP, "
-    "IP address, subnet, router, switch, gateway, DNS, HTTP, HTTPS, "
-    "socket, port, congestion control, flow control, packet loss, "
-    "routing, routing protocol, load balancer, firewall, VPN, "
-    "LAN, WAN, MAC address, Ethernet, Wi-Fi, OSI model, "
-    "TCP handshake, three-way handshake, retransmission, checksum, CRC, "
-    "error detection, error correction"
+    "circuit, transistor, CMOS, digital logic, finite state machine, microprocessor, "
+    "ADC, DAC, PWM, Nyquist, "
+    "control system, feedback, PID controller, state-space, machine learning, "
+    "neural network, deep learning, gradient descent, convolutional neural network, "
+    "reinforcement learning, robotics, probability, random variable, matrix, "
+    "eigenvalue, eigenvector, "
+    "computer architecture, instruction set, microarchitecture, pipeline, superscalar, "
+    "out-of-order, branch prediction, register, throughput, latency, bandwidth, "
+    "clock cycle, "
+    "cache, cache coherence, coherence protocol, MESI, cache line, L1 cache, "
+    "L2 cache, L3 cache, virtual memory, page table, TLB, "
+    "parallelism, concurrency, multithreading, synchronization, deadlock, "
+    "race condition, shared memory, distributed memory, message passing, CUDA, "
+    "OpenMP, MPI, "
+    "computer network, protocol, TCP, IP, UDP, router, gateway, socket, "
+    "congestion control, routing, firewall, VPN, Ethernet, Wi-Fi, three-way handshake"
 )
+
+
+def _merge_prompt(a: str, b: str, max_terms: int = 55) -> str:
+    """合并两份词表，优先 b（课程词），去重并限量，避免 prompt 过长拖慢识别。"""
+    def parts(s: str):
+        return [p.strip() for p in s.replace("\n", " ").split(",") if p.strip()]
+    seen, uniq = [], set()
+    for p in parts(b) + parts(a):
+        k = p.lower()
+        if k not in uniq:
+            uniq.add(k)
+            seen.append(p)
+        if len(seen) >= max_terms:
+            break
+    return ", ".join(seen)
 
 
 def load_asr_prompt() -> str:
@@ -186,7 +176,7 @@ class Segmenter:
     优先用 silero VAD（能区分“人声”和“底噪”），VAD 不可用时退回能量判断。
     """
 
-    def __init__(self, sample_rate=SAMPLE_RATE, min_silence=0.6, max_seg=10.0,
+    def __init__(self, sample_rate=SAMPLE_RATE, min_silence=0.5, max_seg=10.0,
                  sensitivity=3.0, min_threshold=0.003):
         self.sample_rate = sample_rate
         self.min_silence = min_silence
@@ -373,7 +363,7 @@ class Segmenter:
 class Pipeline:
     def __init__(self, model_size="base.en", voice_enabled=True,
                  voice="zh-CN-XiaoxiaoNeural", device=None, sensitivity=3.0,
-                 source="mic", save_audio=False, max_seg=10.0,
+                 source="mic", save_audio=False, max_seg=6.0, translation_workers=2,
                  course_file=None,
                  status_cb=None, segment_cb=None, error_cb=None, log_cb=None):
         self.model_size = model_size
@@ -384,6 +374,7 @@ class Pipeline:
         self.source = source
         self.save_audio = save_audio
         self.max_seg = max_seg
+        self.translation_workers = max(1, int(translation_workers))
         self.course_file = course_file
         self.capture_rate = 48000 if source == "system" else SAMPLE_RATE
         self.status_cb = status_cb or (lambda *a, **k: None)
@@ -407,7 +398,7 @@ class Pipeline:
                 # 识别热词 = 内置词表 + 课件术语
                 extra = _cw.asr_prompt(course)
                 if extra:
-                    self.asr_prompt = (self.asr_prompt + ", " + extra)
+                    self.asr_prompt = _merge_prompt(self.asr_prompt, extra)
                 # 翻译术语表
                 gl = _cw.glossary_text(course)
                 if gl:
@@ -418,9 +409,11 @@ class Pipeline:
                 clog(f"课程课件加载失败：{type(e).__name__}: {e}")
         self.result_q: "queue.Queue[tuple]" = queue.Queue()
         self._asr_q: "queue.Queue[tuple]" = queue.Queue()
+        self._seq = 0
         self._threads = []
         self._stream = None
         self._system_thread = None
+        self._translate_pool = None
         self._wav = None
         self._wav_path = None
         self.running = False
@@ -696,7 +689,8 @@ class Pipeline:
                     continue
                 if text:
                     t0 = time.time()
-                    self._asr_q.put((text, t0))
+                    self._seq += 1
+                    self._asr_q.put((text, t0, self._seq))
                     self.log_cb("EN", text)
                     clog(f"识别(EN): {text}")
             except Exception as e:
@@ -704,41 +698,58 @@ class Pipeline:
 
     # ---------------- 翻译 ----------------
     def _translate_loop(self):
-        while True:
-            # 每 5 秒打印一次“积压心跳”，反映各队列堆积情况即使没在翻译
-            now = time.time()
-            if now - self._last_metrics >= 5.0:
-                self._last_metrics = now
-                clog(f"[积压] 待翻译={self._asr_q.qsize()} 待识别={self.segmenter.out_q.qsize()} "
-                     f"结果队列={self.result_q.qsize()} 模型={self.current_model}")
-            try:
-                item = self._asr_q.get(timeout=0.5)
-            except queue.Empty:
-                if not self.running:
-                    break
-                continue
-            if item is None:
-                break
-            en_text, t0 = item
-            ctx, sec_title = self._retrieve_context(en_text)
-            self.translator.context = ctx
-            try:
-                zh = self.translator.translate(en_text)
-                backend = self.translator.last_backend
-                err = ""
-            except Exception as e:
-                zh = ""
-                backend = "error"
-                err = str(e)[:200]
-            self.result_q.put({
-                "en": en_text, "zh": zh, "backend": backend,
-                "err": err, "t0": t0,
-                "section": sec_title,
-                "latency": time.time() - t0,
-            })
-            lag = time.time() - t0
-            clog(f"翻译({backend}) 延迟 {lag:.1f}s | 页:{sec_title or '-'} | 积压:待翻={self._asr_q.qsize()} "
-                 f"待识={self.segmenter.out_q.qsize()} 待显={self.result_q.qsize()} | {zh[:24]}")
+        """多线程并行翻译，并按序号有序输出，降低排队延迟且不打乱顺序。"""
+        executor = ThreadPoolExecutor(max_workers=self.translation_workers)
+        self._translate_pool = executor
+        try:
+            pending: "dict[int, object]" = {}
+            next_emit = 1  # seq 从 1 开始
+            while True:
+                # 每 5 秒打印一次“积压心跳”，反映各队列堆积情况即使没在翻译
+                now = time.time()
+                if now - self._last_metrics >= 5.0:
+                    self._last_metrics = now
+                    clog(f"[积压] 待翻译={self._asr_q.qsize()} 待识别={self.segmenter.out_q.qsize()} "
+                         f"结果队列={self.result_q.qsize()} 模型={self.current_model}")
+                try:
+                    item = self._asr_q.get(timeout=0.5)
+                except queue.Empty:
+                    item = None
+                if item is not None:
+                    text, t0, seq = item
+                    ctx, sec_title = self._retrieve_context(text)  # 只在协调线程做，避免竞态
+                    fut = executor.submit(self._do_translate, text, t0, ctx, sec_title)
+                    pending[seq] = fut
+                # 每次 get 之后都按序号释放已完成的结果（含等待新条目期间完成的）
+                while next_emit in pending:
+                    f = pending[next_emit]
+                    if not f.done():
+                        break
+                    self.result_q.put(f.result())
+                    pending.pop(next_emit)
+                    next_emit += 1
+                if item is None:
+                    if not self.running:
+                        break
+                    continue
+        finally:
+            executor.shutdown(wait=False)
+
+    def _do_translate(self, text: str, t0: float, ctx: str, sec_title: str) -> dict:
+        try:
+            zh = self.translator.translate(text, context=ctx)
+            backend = self.translator.last_backend
+            err = ""
+        except Exception as e:
+            zh = ""
+            backend = "error"
+            err = str(e)[:200]
+        lag = time.time() - t0
+        clog(f"翻译({backend}) 延迟 {lag:.1f}s | 页:{sec_title or '-'} | "
+             f"积压:待翻={self._asr_q.qsize()} 待识={self.segmenter.out_q.qsize()} "
+             f"待显={self.result_q.qsize()} | {zh[:24]}")
+        return {"en": text, "zh": zh, "backend": backend, "err": err,
+                "t0": t0, "section": sec_title, "latency": lag}
 
     def _retrieve_context(self, text: str) -> tuple[str, str]:
         """用关键词重叠检索当前最相关的课件页，返回 (上下文文本, 页标题)。"""
@@ -892,7 +903,7 @@ class GUI:
         self.rec_var = tk.BooleanVar(value=False)
         self.source_var = tk.StringVar(value="麦克风")
         self.model_var = tk.StringVar(value=opts.model)
-        self.maxseg_var = tk.StringVar(value="10")
+        self.maxseg_var = tk.StringVar(value="6")
         self.course_var = tk.StringVar(value="(无课件)")
         self.device_var = tk.StringVar()
         self.skip_tts = threading.Lock()
@@ -1019,7 +1030,7 @@ class GUI:
 
         tk.Label(sens_row, text="分段上限：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
         self.maxseg_box = ttk.Combobox(sens_row, textvariable=self.maxseg_var,
-                                       values=["4", "6", "8", "10"], width=4, state="readonly")
+                                       values=["4", "5", "6", "8", "10"], width=4, state="readonly")
         self.maxseg_box.pack(side="left", padx=(0, 2))
         tk.Label(sens_row, text="秒/段 [小=快但更易切断]", bg="#f4f6fb", fg="#9ca3af",
                  font=("Microsoft YaHei UI", 9)).pack(side="left")

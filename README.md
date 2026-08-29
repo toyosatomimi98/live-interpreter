@@ -231,9 +231,13 @@ accurate but slower).
 
 - **Latency & responsiveness.** The GUI shows the **measured end-to-end latency** of
   the latest translation (`延迟 X.Xs`). Latency = segment-accumulation (up to the
-  **分段上限**, default 10 s) + recognition + translation. Use the **分段上限**
+  **分段上限**, default 6 s) + recognition + translation. Use the **分段上限**
   dropdown to trade speed vs. completeness: a smaller value (e.g. 4 s) responds
   faster but can cut phrases; a larger value is more complete but adds delay.
+  Translation runs on **multiple parallel workers** (2 by default) and the ASR
+  prompt is kept **concise** (a huge prompt slows decoding and can drift), both of
+  which cut latency; keeping the prompt too short can make Whisper echo it, so the
+  courseware glossary is the preferred steering source.
 
   Measured on this machine for a ~9 s utterance:
 
@@ -406,8 +410,8 @@ Planned improvements (ideas only — not implemented yet). Feedback and PRs welc
   - [x] Phase 3 · **Slide mapping** — tag each translated line with the most likely
     section/page (shown as `页:X` in the console and `§ …` in the GUI/transcript)
     for easy review.
-- [ ] **Lower live latency** — parallelize translation, or make the segment length
-  (分段上限) adaptive to speech rate (faster speech → shorter segments).
+- [x] **Lower live latency** — parallel translation workers with ordered output,
+  lower default segment length (6 s), and a concise ASR prompt.
 - [ ] **More robust system-audio (loopback) capture** — better device auto-selection and
   a clearer on-screen hint when no speech is detected.
 - [ ] **Instant model switch** — preload the selected model in the background so
