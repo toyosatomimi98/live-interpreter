@@ -374,6 +374,7 @@ class Pipeline:
     def __init__(self, model_size="base.en", voice_enabled=True,
                  voice="zh-CN-XiaoxiaoNeural", device=None, sensitivity=3.0,
                  source="mic", save_audio=False, max_seg=10.0,
+                 course_file=None,
                  status_cb=None, segment_cb=None, error_cb=None, log_cb=None):
         self.model_size = model_size
         self.voice_enabled = voice_enabled
@@ -383,6 +384,7 @@ class Pipeline:
         self.source = source
         self.save_audio = save_audio
         self.max_seg = max_seg
+        self.course_file = course_file
         self.capture_rate = 48000 if source == "system" else SAMPLE_RATE
         self.status_cb = status_cb or (lambda *a, **k: None)
         self.segment_cb = segment_cb or (lambda *a, **k: None)
@@ -393,6 +395,24 @@ class Pipeline:
         self.segmenter = Segmenter(sample_rate=self.capture_rate, sensitivity=sensitivity,
                                    max_seg=max_seg)
         self.asr_prompt = load_asr_prompt()
+        self.course_name = ""
+        if course_file:
+            try:
+                import courseware as _cw
+                course = _cw.load_course(course_file)
+                self.course_name = course.name
+                # 识别热词 = 内置词表 + 课件术语
+                extra = _cw.asr_prompt(course)
+                if extra:
+                    self.asr_prompt = (self.asr_prompt + ", " + extra)
+                # 翻译术语表
+                gl = _cw.glossary_text(course)
+                if gl:
+                    self.translator.glossary = gl
+                clog(f"已加载课程课件：{course.name}（术语 {len(course.terms)} 条，"
+                     f"译法 {len(course.glossary)} 条）")
+            except Exception as e:
+                clog(f"课程课件加载失败：{type(e).__name__}: {e}")
         self.result_q: "queue.Queue[tuple]" = queue.Queue()
         self._asr_q: "queue.Queue[tuple]" = queue.Queue()
         self._threads = []
@@ -843,6 +863,7 @@ class GUI:
         self.source_var = tk.StringVar(value="麦克风")
         self.model_var = tk.StringVar(value=opts.model)
         self.maxseg_var = tk.StringVar(value="10")
+        self.course_var = tk.StringVar(value="(无课件)")
         self.device_var = tk.StringVar()
         self.skip_tts = threading.Lock()
         self.ui_q: "queue.Queue[tuple]" = queue.Queue()
@@ -854,6 +875,7 @@ class GUI:
         self.pipeline = None
 
         self._build_widgets()
+        self._refresh_courses()
         self._refresh_devices()
         self._poll()
 
@@ -936,6 +958,19 @@ class GUI:
         self.model_box.pack(side="left", padx=(0, 2))
         self.model_box.bind("<<ComboboxSelected>>", self._on_model)
         tk.Label(ctrl, text="[越大越准但越慢；大模型建议配合文件模式]", bg="#f4f6fb",
+                 fg="#9ca3af", font=("Microsoft YaHei UI", 9)).pack(side="left")
+
+        # 课程课件
+        course_row = tk.Frame(self.root, bg="#f4f6fb")
+        course_row.pack(fill="x", padx=12, pady=2)
+        tk.Label(course_row, text="课程课件：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(0, 2))
+        self.course_box = ttk.Combobox(course_row, textvariable=self.course_var,
+                                       width=26, state="readonly")
+        self.course_box.pack(side="left", padx=(0, 4))
+        tk.Button(course_row, text="刷新", command=self._refresh_courses,
+                  bg="#e5e7eb", fg="#374151", font=("Microsoft YaHei UI", 9),
+                  padx=8, pady=2, bd=0, cursor="hand2").pack(side="left", padx=2)
+        tk.Label(course_row, text="[选课件的 Markdown，术语译法与识别更贴合]", bg="#f4f6fb",
                  fg="#9ca3af", font=("Microsoft YaHei UI", 9)).pack(side="left")
 
         # 灵敏度
@@ -1031,6 +1066,20 @@ class GUI:
         else:
             clog("尚未启动，将在下次开始生效")
 
+    def _refresh_courses(self):
+        proj_dir = os.path.dirname(os.path.abspath(__file__))
+        found = []
+        for sub in ("courseware", "docs"):
+            d = os.path.join(proj_dir, sub)
+            if os.path.isdir(d):
+                for f in sorted(os.listdir(d)):
+                    if f.lower().endswith(".md"):
+                        found.append(os.path.join(d, f))
+        vals = ["(无课件)"] + found
+        self.course_box["values"] = vals
+        if self.course_var.get() not in vals:
+            self.course_var.set("(无课件)")
+
     def _selected_device(self):
         try:
             label = self.device_var.get()
@@ -1065,12 +1114,14 @@ class GUI:
 
     def _build_pipeline(self):
         source = "system" if self.source_var.get() == "系统声音" else "mic"
+        course_file = None if self.course_var.get() == "(无课件)" else self.course_var.get()
         self.pipeline = Pipeline(
             model_size=self.model_var.get(),
             voice_enabled=self.voice_var.get(),
             source=source,
             save_audio=self.rec_var.get(),
             max_seg=float(self.maxseg_var.get()),
+            course_file=course_file,
             device=self._selected_device(),
             sensitivity=float(self.sens_scale.get()),
             status_cb=lambda s: self.ui_q.put(("status", s)),
@@ -1213,6 +1264,7 @@ def run_console(opts):
     pipe = Pipeline(model_size=opts.model, voice_enabled=opts.voice_enabled,
                     source=opts.source, device=None, sensitivity=opts.sensitivity,
                     save_audio=opts.save_audio,
+                    course_file=opts.course,
                     status_cb=lambda s: print("[状态]", s),
                     segment_cb=None,
                     error_cb=lambda e: print("[出错]", e),
@@ -1337,6 +1389,8 @@ def main():
                     help="声音来源：mic=麦克风，system=电脑内部声音(内录)")
     ap.add_argument("--save-audio", action="store_true",
                     help="同时把采集到的声音录入 recordings\\*.wav（16kHz 单声道）")
+    ap.add_argument("--course", default=None,
+                    help="课程课件 Markdown 路径（如 courseware\\xxx.md），用于术语对齐")
     opts = ap.parse_args()
 
     if opts.list_devices:

@@ -21,6 +21,7 @@ venv/
 transcripts/
 _tmp/
 recordings/
+courseware/
 录音稿_*.md
 tiche_*.mp3
 *.wav

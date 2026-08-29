@@ -102,19 +102,24 @@ class Translator:
     def __init__(self, api_key: str | None = None,
                  base_url: str = "https://api.deepseek.com/",
                  model: str = "deepseek-chat",
-                 system_prompt: str | None = None):
+                 system_prompt: str | None = None,
+                 glossary: str = ""):
         self.api_key = api_key or load_api_key()
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.system_prompt = system_prompt or ECE_SYSTEM_PROMPT
+        self.glossary = glossary
         self.last_backend = "none"
         self.last_error = ""
 
     def _deepseek(self, text: str) -> str:
+        content = self.system_prompt
+        if self.glossary:
+            content += ("\n\n术语表（翻译时请优先使用这些标准译法）:\n" + self.glossary)
         body = json.dumps({
             "model": self.model,
             "messages": [
-                {"role": "system", "content": self.system_prompt},
+                {"role": "system", "content": content},
                 {"role": "user", "content": text},
             ],
             "temperature": 0.0,

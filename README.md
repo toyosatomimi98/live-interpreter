@@ -293,6 +293,34 @@ phonetic similarity (e.g. `messy` → `MESI`, `Barclay` → `Barkley`) and trans
 the corrected meaning, so common speech-recognition errors don't leak into the
 Chinese output.
 
+## Courseware glossary (better alignment)
+
+Feed a course's Markdown (`--course docs\sample-courseware.md`, or pick it from the
+GUI **课程课件** dropdown) and the app extracts a **glossary** that:
+
+1. adds the course's terms to the ASR prompt (`prompt.txt`), so technical terms are
+   more likely recognized — and homophones get corrected (e.g. `MESI`, not `messy`);
+2. injects a **translation glossary** (`term = 标准中文`) so the Chinese output uses
+   the same wording as your handout.
+
+See [docs/sample-courseware.md](docs/sample-courseware.md) for the expected format
+(front-matter + a `## 术语表` table + sectioned body). Put your own courses in
+`courseware\` (gitignored).
+
+```bat
+.venv\Scripts\python.exe tongchuan.py --course docs\sample-courseware.md
+```
+
+Measured effect on `base.en` (sample hardware/memory sentence):
+
+| | Without courseware | With courseware |
+|---|---|---|
+| ASR key terms | 10/11 (`MESI`→`messy`) | 11/11 (`MESI`) |
+| Translation terms | 存储缓冲区 / 内存排序 / MESI | 存储缓冲 / 内存序 / 缓存一致性协议(MESI) |
+
+The ASR gain is modest on clean audio but larger on real/noisy/accented lectures;
+the translation glossary reliably aligns the wording with your handout.
+
 ## Translation backend & API key
 
 Translation uses **DeepSeek** (an OpenAI-compatible endpoint) by default. The API
@@ -349,9 +377,9 @@ Planned improvements (ideas only — not implemented yet). Feedback and PRs welc
 
 - [ ] **Courseware-aligned recognition & translation** — use your local PPT/PDF course
   material to improve alignment between the speech translation and the slides:
-  - Phase 1 · **Glossary extraction** *(highest value, lowest effort)* — parse the
-    course files, extract the key terms / acronyms / proper nouns, and generate (a)
-    an ASR term list (`prompt.txt`) and (b) a translation glossary
+  - [x] Phase 1 · **Glossary extraction** *(highest value, lowest effort)* — parse a
+    course **Markdown**, extract the key terms / acronyms / proper nouns, and
+    generate (a) an ASR term list (`prompt.txt`) and (b) a translation glossary
     (`term = 标准中文`) that are injected automatically.
   - Phase 2 · **Context retrieval** — index each slide's text; when a sentence is
     recognized, retrieve the most relevant slide and include it as translation
