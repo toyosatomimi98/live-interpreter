@@ -421,6 +421,16 @@ Planned improvements (ideas only — not implemented yet). Feedback and PRs welc
 
 MIT — see [LICENSE](LICENSE).
 
+## Testing
+
+Run the automated smoke test (imports, courseware parsing & conversion, translation
+with glossary/context/fragments, ASR with courseware prompt, end-to-end pipeline,
+record-audio, and loopback):
+
+```bat
+.venv\Scripts\python.exe selftest.py
+```
+
 ---
 
 ## 中文简介
