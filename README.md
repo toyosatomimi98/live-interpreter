@@ -304,7 +304,9 @@ GUI **课程课件** dropdown) and the app extracts a **glossary** that:
    the same wording as your handout.
 3. **retrieves the most relevant courseware page** for each recognized sentence and
    feeds it as translation context (keyword-overlap retrieval with stay-put
-   smoothing), so wording matches the slide being discussed (Phase 2).
+   smoothing), so wording matches the slide being discussed (Phase 2), and **tags
+   each translated line with that section** (`页:X` in the console, `§ …` in the GUI
+   and Markdown transcript) for easy review (Phase 3).
 
 See [docs/sample-courseware.md](docs/sample-courseware.md) for the expected format
 (front-matter + a `## 术语表` table + sectioned body). The glossary extractor also
@@ -401,8 +403,9 @@ Planned improvements (ideas only — not implemented yet). Feedback and PRs welc
     recognized, retrieve the most relevant slide (keyword overlap, with stay-put
     smoothing) and include it as translation context so the wording matches the
     current topic.
-  - Phase 3 · **Slide mapping** — tag each translated line with the likely
-    slide/page number and timestamp in the transcript for easy review.
+  - [x] Phase 3 · **Slide mapping** — tag each translated line with the most likely
+    section/page (shown as `页:X` in the console and `§ …` in the GUI/transcript)
+    for easy review.
 - [ ] **Lower live latency** — parallelize translation, or make the segment length
   (分段上限) adaptive to speech rate (faster speech → shorter segments).
 - [ ] **More robust system-audio (loopback) capture** — better device auto-selection and

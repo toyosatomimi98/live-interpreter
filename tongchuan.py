@@ -720,7 +720,8 @@ class Pipeline:
             if item is None:
                 break
             en_text, t0 = item
-            self.translator.context = self._retrieve_context(en_text)
+            ctx, sec_title = self._retrieve_context(en_text)
+            self.translator.context = ctx
             try:
                 zh = self.translator.translate(en_text)
                 backend = self.translator.last_backend
@@ -732,16 +733,17 @@ class Pipeline:
             self.result_q.put({
                 "en": en_text, "zh": zh, "backend": backend,
                 "err": err, "t0": t0,
+                "section": sec_title,
                 "latency": time.time() - t0,
             })
             lag = time.time() - t0
-            clog(f"翻译({backend}) 延迟 {lag:.1f}s | 积压:待翻={self._asr_q.qsize()} "
+            clog(f"翻译({backend}) 延迟 {lag:.1f}s | 页:{sec_title or '-'} | 积压:待翻={self._asr_q.qsize()} "
                  f"待识={self.segmenter.out_q.qsize()} 待显={self.result_q.qsize()} | {zh[:24]}")
 
-    def _retrieve_context(self, text: str) -> str:
-        """用关键词重叠检索当前最相关的课件页，作为翻译上下文。"""
+    def _retrieve_context(self, text: str) -> tuple[str, str]:
+        """用关键词重叠检索当前最相关的课件页，返回 (上下文文本, 页标题)。"""
         if not self.course_sections:
-            return ""
+            return "", ""
         import re as _re
         words = set(_re.findall(r"[a-z0-9-]{2,}", text.lower()))
         scores = []
@@ -749,7 +751,7 @@ class Pipeline:
             low = (title + " " + body).lower()
             scores.append(sum(1 for w in words if w in low))
         if not scores or max(scores) == 0:
-            return ""
+            return "", ""
         best = max(range(len(scores)), key=lambda i: scores[i])
         # 平滑：若上次命中的邻页分数接近，则停留，避免频繁跳页
         prev = self._last_section
@@ -757,7 +759,8 @@ class Pipeline:
             best = prev
         self._last_section = best
         title, body = self.course_sections[best]
-        return f"[{title}] {body[:800]}"
+        self._last_section_title = title
+        return f"[{title}] {body[:800]}", title
 
 
 # ----------------------------------------------------------------------------
@@ -860,12 +863,13 @@ class MarkdownLogger:
         name = f"同声传译_{datetime.now():%Y%m%d_%H%M%S}.md"
         return cls(os.path.join(d, name))
 
-    def append(self, en: str, zh: str, backend: str = ""):
+    def append(self, en: str, zh: str, backend: str = "", section: str = ""):
         ts = datetime.now().strftime("%H:%M:%S")
         note = f"（{backend}）" if backend else ""
+        sec = f"§{section} " if section else ""
         with self._lock:
             with open(self.path, "a", encoding="utf-8") as f:
-                f.write(f"**{ts}** EN: {en}\n\nZH: {zh}{note}\n\n---\n\n")
+                f.write(f"**{ts}** {sec}EN: {en}\n\nZH: {zh}{note}\n\n---\n\n")
 
 
 # ----------------------------------------------------------------------------
@@ -883,6 +887,7 @@ class GUI:
         self.zh_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="就绪")
         self.lat_var = tk.StringVar(value="延迟 --")
+        self.sec_var = tk.StringVar(value="")
         self.voice_var = tk.BooleanVar(value=opts.voice_enabled)
         self.rec_var = tk.BooleanVar(value=False)
         self.source_var = tk.StringVar(value="麦克风")
@@ -921,6 +926,9 @@ class GUI:
         self.lat = tk.Label(meter_row, textvariable=self.lat_var, bg="#f4f6fb", fg="#dc2626",
                             font=("Microsoft YaHei UI", 10, "bold"))
         self.lat.pack(side="left", padx=(10, 0))
+        self.sec = tk.Label(meter_row, textvariable=self.sec_var, bg="#f4f6fb", fg="#7c3aed",
+                            font=("Microsoft YaHei UI", 10))
+        self.sec.pack(side="left", padx=(10, 0))
 
         en_card = tk.Frame(self.root, bg="#ffffff", highlightbackground="#e1e6f0",
                            highlightthickness=1)
@@ -1260,6 +1268,9 @@ class GUI:
         lat = item.get("latency")
         if isinstance(lat, (int, float)):
             self.lat_var.set(f"延迟 {lat:.1f}s")
+        sec = item.get("section")
+        if sec:
+            self.sec_var.set(f"§ {sec}")
         self.en_var.set(en)
         if zh:
             self.zh_var.set(zh)
@@ -1268,7 +1279,7 @@ class GUI:
             self.zh_var.set("(翻译失败，仅显示原文)")
             self._append_log("ERR", item.get("err"))
         if self.logger and en:
-            self.logger.append(en, zh, backend)
+            self.logger.append(en, zh, backend, sec)
         if self.pipeline and self.voice_var.get() and zh:
             self.pipeline.tts.speak(zh)
 
