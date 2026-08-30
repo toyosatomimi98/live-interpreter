@@ -50,3 +50,7 @@ _scan*.py
 _test.mp3
 *.tmp
 prompt.txt
+
+# 云同步（如百度网盘）产生的临时/上传状态文件
+.baiduyun.uploading.cfg
+*.baiduyun.uploading.cfg
