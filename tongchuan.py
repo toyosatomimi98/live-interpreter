@@ -383,7 +383,8 @@ class Pipeline:
         self.log_cb = log_cb or (lambda *a, **k: None)
 
         self.translator = Translator()
-        self.segmenter = Segmenter(sample_rate=self.capture_rate, sensitivity=sensitivity,
+        # 分段器始终在 16kHz 工作：silero VAD 是 16kHz 模型，采样率不符会严重丢段（尤其内录 48k）。
+        self.segmenter = Segmenter(sample_rate=SAMPLE_RATE, sensitivity=sensitivity,
                                    max_seg=max_seg)
         self.asr_prompt = load_asr_prompt()
         self.course_name = ""
@@ -602,7 +603,8 @@ class Pipeline:
                     rec = chosen.recorder(samplerate=sr, channels=2)
                     rec.__enter__()
                     self.capture_rate = sr
-                    self.segmenter.sample_rate = sr
+                    # silero VAD 是 16kHz 模型，内录块在 feed 前会降到 16k，采样率必须跟着设成 16k。
+                    self.segmenter.sample_rate = SAMPLE_RATE
                     break
                 except Exception:
                     rec = None
@@ -623,11 +625,13 @@ class Pipeline:
                     if data is None:
                         continue
                     arr = np.asarray(data, dtype=np.float32)
-                    mono = arr[:, 0] if arr.ndim == 2 else arr
+                    # 立体声合并成单声道，避免只取左声道漏掉内容（如内容在右/中间声道）。
+                    mono = arr.mean(axis=1) if arr.ndim == 2 else arr
                     mono = np.clip(mono, -0.98, 0.98)
                     self.current_level = float(np.sqrt(np.mean(np.square(mono))))
-                    self._record(mono, self.capture_rate)
-                    self.segmenter.feed(np.ascontiguousarray(mono, dtype=np.float32))
+                    mono16 = _to_16k(np.ascontiguousarray(mono, dtype=np.float32), self.capture_rate)
+                    self._record(mono16, SAMPLE_RATE)
+                    self.segmenter.feed(np.ascontiguousarray(mono16, dtype=np.float32))
             finally:
                 try:
                     rec.__exit__(None, None, None)
@@ -675,7 +679,7 @@ class Pipeline:
             if seg is None:
                 break
             try:
-                seg = _to_16k(np.ascontiguousarray(seg, dtype=np.float32), self.capture_rate)
+                seg = _to_16k(np.ascontiguousarray(seg, dtype=np.float32), self.segmenter.sample_rate)
                 seg_iters, info = self.model.transcribe(
                     seg, beam_size=1, language="en", vad_filter=True,
                     condition_on_previous_text=False,
@@ -865,22 +869,45 @@ class MarkdownLogger:
     def __init__(self, path: str):
         self.path = path
         self._lock = threading.Lock()
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(f"# 同声传译记录\n\n> 开始时间：{datetime.now():%Y-%m-%d %H:%M:%S}\n\n")
+        header = f"# 同声传译记录\n\n> 开始时间：{datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
+        last = None
+        for _ in range(6):
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(header)
+                return
+            except OSError as e:
+                last = e
+                time.sleep(0.1)
+        raise OSError(f"无法创建转写文件 {path}: {last}")
 
     @classmethod
     def auto(cls, directory: str | None = None) -> "MarkdownLogger":
         d = directory or transcripts_dir()
-        name = f"同声传译_{datetime.now():%Y%m%d_%H%M%S}.md"
+        # 毫秒 + 进程号，避免同一秒开启的多个会话/实例生成同名文件互相争抢。
+        name = f"同声传译_{datetime.now():%Y%m%d_%H%M%S_%f}_{os.getpid()}.md"
         return cls(os.path.join(d, name))
 
     def append(self, en: str, zh: str, backend: str = "", section: str = ""):
         ts = datetime.now().strftime("%H:%M:%S")
         note = f"（{backend}）" if backend else ""
         sec = f"§{section} " if section else ""
+        line = f"**{ts}** {sec}EN: {en}\n\nZH: {zh}{note}\n\n---\n\n"
         with self._lock:
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(f"**{ts}** {sec}EN: {en}\n\nZH: {zh}{note}\n\n---\n\n")
+            last = None
+            for _ in range(6):
+                try:
+                    with open(self.path, "a", encoding="utf-8") as f:
+                        f.write(line)
+                    return
+                except OSError as e:
+                    last = e
+                    time.sleep(0.1)
+            # 重试后仍失败（例如文件被占用、磁盘/权限问题）：记录到控制台，不打断 GUI。
+            try:
+                sys.stderr.write(f"[markdown] 转写保存失败 {type(last).__name__}: {last}\n")
+            except Exception:
+                pass
 
 
 # ----------------------------------------------------------------------------
