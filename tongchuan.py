@@ -29,10 +29,26 @@ import numpy as np
 warnings.filterwarnings("ignore", message=".*data discontinuity in recording.*")
 
 
+# 控制台配色：除中英字幕外，其它日志统一灰色。仅在真实终端启用 ANSI，
+# 重定向/管道时关闭，避免把 \033[90m 这类转义序列原样输出。
+_ANSI = bool(getattr(sys.stdout, "isatty", lambda: False)())
+if os.name == "nt" and _ANSI:
+    try:
+        import ctypes
+        _h = ctypes.windll.kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        _mode = ctypes.c_uint32(0)
+        ctypes.windll.kernel32.GetConsoleMode(_h, ctypes.byref(_mode))
+        ctypes.windll.kernel32.SetConsoleMode(_h, _mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    except Exception:
+        pass
+_C_GRAY = "\033[90m" if _ANSI else ""
+_C_RESET = "\033[0m" if _ANSI else ""
+
+
 def clog(msg: str):
     """把事件打印到控制台（启动 bat 打开的窗口），供用户实时观察。"""
     try:
-        print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
+        print(f"{_C_GRAY}[{datetime.now():%H:%M:%S}] {msg}{_C_RESET}", flush=True)
     except Exception:
         pass
 
@@ -363,7 +379,8 @@ class Segmenter:
 class Pipeline:
     def __init__(self, model_size="base.en", voice_enabled=True,
                  voice="zh-CN-XiaoxiaoNeural", device=None, sensitivity=3.0,
-                 source="mic", save_audio=False, max_seg=4.0, translation_workers=2,
+                 source="mic", save_audio=False, max_seg=4.0,
+                 min_silence=0.5, min_words=3, translation_workers=2,
                  course_file=None,
                  status_cb=None, segment_cb=None, error_cb=None, log_cb=None):
         self.model_size = model_size
@@ -374,6 +391,8 @@ class Pipeline:
         self.source = source
         self.save_audio = save_audio
         self.max_seg = max_seg
+        self.min_silence = min_silence
+        self.min_words = max(1, int(min_words))
         self.translation_workers = max(1, int(translation_workers))
         self.course_file = course_file
         self.capture_rate = 48000 if source == "system" else SAMPLE_RATE
@@ -385,7 +404,7 @@ class Pipeline:
         self.translator = Translator()
         # 分段器始终在 16kHz 工作：silero VAD 是 16kHz 模型，采样率不符会严重丢段（尤其内录 48k）。
         self.segmenter = Segmenter(sample_rate=SAMPLE_RATE, sensitivity=sensitivity,
-                                   max_seg=max_seg)
+                                   max_seg=max_seg, min_silence=min_silence)
         self.asr_prompt = load_asr_prompt()
         self.course_name = ""
         self.course_sections: "list[tuple[str, str]]" = []
@@ -688,7 +707,7 @@ class Pipeline:
                 text = "".join(s.text for s in seg_iters).strip()
                 self.segments_count += 1
                 # 跳过太短的残片（很可能是噪声/幻听/被截断），避免翻出奇怪内容
-                if len(text.split()) < 3:
+                if len(text.split()) < self.min_words:
                     clog(f"跳过过短片段：{text!r}")
                     continue
                 if text:
@@ -863,6 +882,25 @@ def transcripts_dir() -> str:
     return d
 
 
+def _write_with_retry(path: str, mode: str, text: str,
+                      tries: int = 14, base_delay: float = 0.05) -> OSError | None:
+    """带指数退避重试的写入。返回 None 表示成功，否则返回最后一次 OSError。
+
+    某些环境（杀软 / EDR 实时扫描、OneDrive、索引服务）会在写入瞬间短暂锁定文件，
+    导致一次性 open+write 偶发 PermissionError。这里用退避重试扛过去。
+    """
+    last = None
+    for i in range(tries):
+        try:
+            with open(path, mode, encoding="utf-8") as f:
+                f.write(text)
+            return None
+        except OSError as e:
+            last = e
+            time.sleep(min(base_delay * (2 ** min(i, 6)), 1.0))
+    return last
+
+
 class MarkdownLogger:
     """把实时识别+翻译结果持续追加写入 markdown 文件（每个会话一个文件）。"""
 
@@ -870,16 +908,9 @@ class MarkdownLogger:
         self.path = path
         self._lock = threading.Lock()
         header = f"# 同声传译记录\n\n> 开始时间：{datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
-        last = None
-        for _ in range(6):
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(header)
-                return
-            except OSError as e:
-                last = e
-                time.sleep(0.1)
-        raise OSError(f"无法创建转写文件 {path}: {last}")
+        err = _write_with_retry(path, "w", header)
+        if err is not None:
+            raise OSError(f"无法创建转写文件 {path}: {err}")
 
     @classmethod
     def auto(cls, directory: str | None = None) -> "MarkdownLogger":
@@ -894,20 +925,20 @@ class MarkdownLogger:
         sec = f"§{section} " if section else ""
         line = f"**{ts}** {sec}EN: {en}\n\nZH: {zh}{note}\n\n---\n\n"
         with self._lock:
-            last = None
-            for _ in range(6):
-                try:
-                    with open(self.path, "a", encoding="utf-8") as f:
-                        f.write(line)
-                    return
-                except OSError as e:
-                    last = e
-                    time.sleep(0.1)
-            # 重试后仍失败（例如文件被占用、磁盘/权限问题）：记录到控制台，不打断 GUI。
+            err = _write_with_retry(self.path, "a", line)
+            if err is None:
+                return
+            # 主文件持续被锁：降级追加到备用文件，尽量保住内容，并明确告知。
             try:
-                sys.stderr.write(f"[markdown] 转写保存失败 {type(last).__name__}: {last}\n")
-            except Exception:
-                pass
+                base, ext = os.path.splitext(self.path)
+                fb = f"{base}.bak{ext}"
+                err2 = _write_with_retry(fb, "a", line)
+                if err2 is None:
+                    sys.stderr.write(f"[markdown] 主文件被锁，已改存备用文件：{fb}（{type(err).__name__}）\n")
+                else:
+                    sys.stderr.write(f"[markdown] 转写保存失败 {type(err).__name__}: {err}（备用也失败：{err2}）\n")
+            except Exception as e:
+                sys.stderr.write(f"[markdown] 转写保存失败 {type(err).__name__}: {err}（备用异常：{e}）\n")
 
 
 # ----------------------------------------------------------------------------
@@ -1071,6 +1102,8 @@ class GUI:
         self.log = tk.Text(log_frame, bg="#ffffff", fg="#374151", wrap="word",
                            font=("Microsoft YaHei UI", 10), bd=0, state="disabled")
         self.log.pack(fill="both", expand=True, padx=6, pady=6)
+        # 日志面板默认文字灰色；中英字幕行保持原色（见 _append_log 的 tag 选择）。
+        self.log.tag_configure("gray", foreground="#9aa0a6")
 
     # ---------------- 设备 ----------------
     def _refresh_devices(self):
@@ -1233,17 +1266,24 @@ class GUI:
         ts = datetime.now().strftime("%H:%M:%S")
         if kind == "ERR":
             line = f"[{ts}] ⚠ {text}\n"
+            tag = "gray"
         elif kind == "EN":
             line = f"[{ts}] EN: {text}\n"
+            tag = None
         elif kind == "ZH":
             line = f"    ZH: {text}\n"
+            tag = None
         else:
             line = text + "\n"
-        self._log_line(line)
+            tag = "gray"
+        self._log_line(line, tag)
 
-    def _log_line(self, line: str):
+    def _log_line(self, line: str, tag: str | None = None):
         self.log.configure(state="normal")
-        self.log.insert("end", line)
+        if tag:
+            self.log.insert("end", line, tag)
+        else:
+            self.log.insert("end", line)
         self.log.see("end")
         self.log.configure(state="disabled")
 
@@ -1324,6 +1364,12 @@ class GUI:
     def on_close(self):
         if self.pipeline:
             self.pipeline.stop()
+        if self.logger is not None:
+            try:
+                clog(f"已停止，转写稿保存位置：{self.logger.path}")
+                self._append_log("INFO", f"已停止，转写稿保存位置：{self.logger.path}")
+            except Exception:
+                pass
         self.root.destroy()
 
 
@@ -1332,22 +1378,24 @@ class GUI:
 # ----------------------------------------------------------------------------
 def run_console(opts):
     trans = Translator()
-    print("已使用 API key：", trans.key_summary())
+    print(f"{_C_GRAY}已使用 API key：{trans.key_summary()}{_C_RESET}")
     src_txt = "系统声音" if opts.source == "system" else "麦克风"
-    print(f"正在从{src_txt}实时识别并翻译… Ctrl+C 退出。\n")
+    print(f"{_C_GRAY}正在从{src_txt}实时识别并翻译… Ctrl+C 退出。{_C_RESET}\n")
     pipe = Pipeline(model_size=opts.model, voice_enabled=opts.voice_enabled,
                     source=opts.source, device=None, sensitivity=opts.sensitivity,
                     save_audio=opts.save_audio,
                     course_file=opts.course,
-                    status_cb=lambda s: print("[状态]", s),
+                    max_seg=opts.max_seg, min_silence=opts.min_silence,
+                    min_words=opts.min_words,
+                    status_cb=lambda s: print(f"{_C_GRAY}[状态] {s}{_C_RESET}"),
                     segment_cb=None,
-                    error_cb=lambda e: print("[出错]", e),
+                    error_cb=lambda e: print(f"{_C_GRAY}[出错] {e}{_C_RESET}"),
                     log_cb=_console_log)
     # 存好 translator 引用
-    print("按 Enter 开始采集…")
+    print(f"{_C_GRAY}按 Enter 开始采集…{_C_RESET}")
     input()
     logger = MarkdownLogger.auto()
-    print("记录将保存到：", logger.path)
+    print(f"{_C_GRAY}记录将保存到：{logger.path}{_C_RESET}")
     pipe.start()
     t0 = time.time()
     try:
@@ -1359,18 +1407,26 @@ def run_console(opts):
             if item is None:
                 break
             en = item["en"]; zh = item["zh"]
-            print("─" * 60)
+            print(f"{_C_GRAY}{'─' * 60}{_C_RESET}")
             print("EN:", en)
             if zh:
                 print("ZH:", zh)
             if item.get("err"):
-                print("   (翻译失败:", item["err"], ")")
-            print(f"   延迟: {item['latency']:.1f}s | {item['backend']}")
+                print(f"{_C_GRAY}   (翻译失败: {item['err']}){_C_RESET}")
+            print(f"{_C_GRAY}   延迟: {item['latency']:.1f}s | {item['backend']}{_C_RESET}")
             logger.append(en, zh, item.get("backend", ""))
     except KeyboardInterrupt:
         pass
     finally:
         pipe.stop()
+        try:
+            p = logger.path
+            print(f"{_C_GRAY}\n[已结束] 转写稿保存位置：{p}{_C_RESET}")
+            bak = os.path.splitext(p)[0] + ".bak" + os.path.splitext(p)[1]
+            if os.path.exists(bak):
+                print(f"{_C_GRAY}[提示] 主文件曾被锁定，另有备用稿：{bak}{_C_RESET}")
+        except Exception:
+            pass
 
 
 def _console_log(kind, text):
@@ -1457,6 +1513,12 @@ def main():
                     help="开启中文语音（默认开）")
     ap.add_argument("--no-voice", dest="voice_enabled", action="store_false", help="关闭中文语音")
     ap.add_argument("--sensitivity", type=float, default=3.0)
+    ap.add_argument("--max-seg", type=float, default=4.0,
+                    help="分段上限（秒），默认 4.0；调大使长句不易被切断但延迟更高")
+    ap.add_argument("--min-silence", type=float, default=0.5,
+                    help="判定一句结束的静音时长（秒），默认 0.5")
+    ap.add_argument("--min-words", type=int, default=3,
+                    help="少于该单词数的识别片段会被跳过（默认 3；设 1 表示不过滤）")
     ap.add_argument("--list-devices", action="store_true", help="列出麦克风设备")
     ap.add_argument("--test-mic", action="store_true", help="自检麦克风电平")
     ap.add_argument("--source", choices=["mic", "system"], default="mic",
