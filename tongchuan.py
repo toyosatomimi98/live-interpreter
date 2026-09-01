@@ -444,6 +444,7 @@ class Pipeline:
         self.current_level = 0.0
         self.segments_count = 0
         self._last_metrics = 0.0
+        self._last_lag_warn = 0.0
 
     def request_model_change(self, model: str):
         """运行中切换识别模型；不在运行时就记下，下次启动生效。"""
@@ -732,8 +733,13 @@ class Pipeline:
                 now = time.time()
                 if now - self._last_metrics >= 5.0:
                     self._last_metrics = now
-                    clog(f"[积压] 待翻译={self._asr_q.qsize()} 待识别={self.segmenter.out_q.qsize()} "
+                    pend_s = self.segmenter.out_q.qsize()
+                    clog(f"[积压] 待翻译={self._asr_q.qsize()} 待识别={pend_s} "
                          f"结果队列={self.result_q.qsize()} 模型={self.current_model}")
+                    if pend_s > 6 and now - self._last_lag_warn >= 15:
+                        self._last_lag_warn = now
+                        clog("⚠ 识别跟不上（待识别段数过多），结果会明显延迟。"
+                             "建议：切换到 base.en，或增大分段上限，或改用文件模式。")
                 try:
                     item = self._asr_q.get(timeout=0.5)
                 except queue.Empty:
@@ -1504,8 +1510,9 @@ def mic_test():
 
 def main():
     ap = argparse.ArgumentParser(description="麦克风实时英语→中语同声传译")
-    ap.add_argument("--model", default="small.en",
-                    help="whisper 模型（base.en/small.en/medium.en/large-v3-turbo/large-v3；默认 small.en）")
+    ap.add_argument("--model", default="base.en",
+                    help="whisper 模型（base.en/small.en/medium.en/large-v3-turbo/large-v3；"
+                         "实时默认 base.en，大模型建议文件模式）")
     ap.add_argument("--console", action="store_true", help="控制台模式")
     ap.add_argument("--file", default=None, help="识别单个音频文件（mp3/wav 等）")
     ap.add_argument("--save", action="store_true", help="文件模式保存 markdown 记录")

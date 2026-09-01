@@ -65,7 +65,7 @@ Recordings are stored in `recordings\` and are **gitignored**.
 
 ```text
 --model base.en|small.en|medium.en|large-v3-turbo|large-v3
-                                    Whisper model (default: small.en)
+                                    Whisper model (for live: default base.en)
 --voice / --no-voice                 Enable / disable spoken Chinese
 --source mic|system                  Input source (microphone or system audio)
 --sensitivity N                      Mic sensitivity (1–8, default 3)
@@ -99,6 +99,11 @@ translation): ≈ **9 s** with `base.en` and ≈ **10 s** with `small.en` at a 5
 limit. At the default 4 s limit it is roughly 1 s lower. On CPU, real-time large
 models aren't practical; distilled Whisper models are **not** faster here (and can be
 slower), so use a **smaller 分段上限** or **`base.en`** for the lowest latency.
+
+> **`small.en` runs ≈ 2.5× real-time on this CPU with the ASR prompt**, so it cannot
+> keep up with live speech (the `待识别` backlog grows). Use **`base.en`** for live;
+> use `small.en` / `medium.en` / `large-v3-turbo` in **file mode** (no real-time limit).
+> A backlog warning is shown in the console when recognition falls behind.
 
 Measured on this machine for a ~9 s utterance:
 
