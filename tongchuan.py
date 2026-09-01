@@ -16,6 +16,7 @@ import asyncio
 import math
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -913,6 +914,7 @@ class MarkdownLogger:
     def __init__(self, path: str):
         self.path = path
         self._lock = threading.Lock()
+        self.entries: list[tuple[str, str, str]] = []  # (en, zh, section)
         header = f"# 同声传译记录\n\n> 开始时间：{datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
         err = _write_with_retry(path, "w", header)
         if err is not None:
@@ -930,6 +932,7 @@ class MarkdownLogger:
         note = f"（{backend}）" if backend else ""
         sec = f"§{section} " if section else ""
         line = f"**{ts}** {sec}EN: {en}\n\nZH: {zh}{note}\n\n---\n\n"
+        self.entries.append((en, zh, section))
         with self._lock:
             err = _write_with_retry(self.path, "a", line)
             if err is None:
@@ -945,6 +948,47 @@ class MarkdownLogger:
                     sys.stderr.write(f"[markdown] 转写保存失败 {type(err).__name__}: {err}（备用也失败：{err2}）\n")
             except Exception as e:
                 sys.stderr.write(f"[markdown] 转写保存失败 {type(err).__name__}: {err}（备用异常：{e}）\n")
+
+
+def finalize_transcript(logger):
+    """用 AI 总结整段内容，并给 Markdown 重写标题（含时间+主题）+ 追加摘要。"""
+    if not logger or not logger.entries:
+        clog("本次没有可总结的内容。")
+        return
+    try:
+        from translation import Translator
+        tr = Translator()
+        text = "\n".join(f"EN: {en}" for en, zh, sec in logger.entries)
+        if len(text) > 6000:
+            text = text[:6000] + "\n…（内容较长，已截断用于摘要）"
+        title, summary = tr.summarize(text)
+    except Exception as e:
+        clog(f"AI 总结失败：{type(e).__name__}: {e}")
+        return
+
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    try:
+        with open(logger.path, encoding="utf-8") as f:
+            old = f.read()
+    except OSError:
+        old = ""
+    idx = old.find("**")
+    body = old[idx:] if idx >= 0 else old
+
+    safe_title = re.sub(r'[\\/:*?"<>|]+', "_", title).strip() or "同声传译"
+    new_header = (f"# 同声传译 · {title} · {ts}\n\n"
+                  f"## 内容摘要\n\n{summary}\n\n---\n\n")
+    _write_with_retry(logger.path, "w", new_header + body)
+
+    new_name = f"同声传译_{safe_title}_{datetime.now():%Y%m%d_%H%M%S}.md"
+    new_path = os.path.join(os.path.dirname(logger.path), new_name)
+    try:
+        os.rename(logger.path, new_path)
+        logger.path = new_path
+    except OSError:
+        pass
+    clog(f"已生成标题与摘要：{title}")
+    clog(f"摘要：{summary[:80]}")
 
 
 # ----------------------------------------------------------------------------
@@ -1204,6 +1248,7 @@ class GUI:
                 self.pipeline.stop()
                 self.start_btn.configure(text="▶ 开始")
                 clog(">>> 停止")
+                self._after_stop_finalize()
             else:
                 clog(">>> 开始")
                 self._build_pipeline()
@@ -1218,6 +1263,12 @@ class GUI:
         except Exception as e:
             self.status_var.set("⚠ 启动出错：" + str(e))
             self._append_log("ERR", f"启动出错: {type(e).__name__}: {e}")
+
+    def _after_stop_finalize(self):
+        """停止后：若录了内容，用 AI 总结并重写转写稿标题。"""
+        self.status_var.set("正在用 AI 总结本次内容…")
+        if self.logger is not None:
+            threading.Thread(target=finalize_transcript, args=(self.logger,), daemon=True).start()
 
     def _show_hint(self, line: str):
         self._append_log("INFO", line)
@@ -1374,6 +1425,7 @@ class GUI:
             try:
                 clog(f"已停止，转写稿保存位置：{self.logger.path}")
                 self._append_log("INFO", f"已停止，转写稿保存位置：{self.logger.path}")
+                finalize_transcript(self.logger)
             except Exception:
                 pass
         self.root.destroy()
@@ -1426,6 +1478,8 @@ def run_console(opts):
     finally:
         pipe.stop()
         try:
+            print("正在用 AI 总结本次内容…")
+            finalize_transcript(logger)
             p = logger.path
             print(f"{_C_GRAY}\n[已结束] 转写稿保存位置：{p}{_C_RESET}")
             bak = os.path.splitext(p)[0] + ".bak" + os.path.splitext(p)[1]

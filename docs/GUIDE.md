@@ -61,6 +61,11 @@ recording reliably:
 
 Recordings are stored in `recordings\` and are **gitignored**.
 
+When a session ends (press **停止** or close the window), the app **uses AI to
+summarize the whole transcript** and rewrites the Markdown with a new title
+(topic + time) plus a `## 内容摘要` section, and renames the file to a topic-based
+name (e.g. `同声传译_缓存一致性_20260901_130515.md`).
+
 ## Options
 
 ```text

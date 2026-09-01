@@ -50,6 +50,14 @@ ECE_SYSTEM_PROMPT = (
     "Chinese translation."
 )
 
+# 用于录制结束后的内容总结。
+SUMMARY_SYSTEM_PROMPT = (
+    "You are a study assistant. Given the transcript of an English lecture or "
+    "lesson, write a concise Chinese summary. Respond in EXACTLY this format, "
+    "with nothing else:\n"
+    "标题：<一句话中文标题，概括主题，不含日期时间>\n"
+    "摘要：<2-4 句中文摘要，概括主要内容>"
+)
 
 def _find_key_in_codex_config() -> str | None:
     for path in (
@@ -112,32 +120,50 @@ class Translator:
         self.last_backend = "none"
         self.last_error = ""
 
+    def _chat(self, system_prompt: str, user_text: str) -> str:
+        body = json.dumps({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ],
+            "temperature": 0.3,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            self.base_url + "/chat/completions",
+            data=body, method="POST",
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer " + self.api_key},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.load(resp)
+        return data["choices"][0]["message"]["content"].strip()
+
+    def summarize(self, text: str) -> tuple[str, str]:
+        """返回 (标题, 摘要)。需 DeepSeek key；失败抛异常。"""
+        if not self.api_key:
+            raise RuntimeError("no api key")
+        raw = self._chat(SUMMARY_SYSTEM_PROMPT, text)
+        title = summary = ""
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith("标题"):
+                title = line.split("：", 1)[-1].strip() or line.split(":", 1)[-1].strip()
+            elif line.startswith("摘要"):
+                summary = line.split("：", 1)[-1].strip() or line.split(":", 1)[-1].strip()
+        if not title:
+            title = (raw.splitlines()[0] if raw.splitlines() else "")[:40]
+        if not summary:
+            summary = raw[:300]
+        return title, summary
+
     def _deepseek(self, text: str, context: str = "") -> str:
         content = self.system_prompt
         if self.glossary:
             content += ("\n\n术语表（翻译时请优先使用这些标准译法）:\n" + self.glossary)
         if context:
             content += ("\n\n当前讲义背景（据此理解语境，术语以其为准）:\n" + context)
-        body = json.dumps({
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": content},
-                {"role": "user", "content": text},
-            ],
-            "temperature": 0.0,
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            self.base_url + "/chat/completions",
-            data=body,
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": "Bearer " + self.api_key,
-            },
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.load(resp)
-        content = data["choices"][0]["message"]["content"].strip()
+        content = self._chat(content, text)
         self.last_backend = "deepseek"
         return content
 
