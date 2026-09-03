@@ -901,6 +901,9 @@ def _write_with_retry(path: str, mode: str, text: str,
         try:
             with open(path, mode, encoding="utf-8") as f:
                 f.write(text)
+                f.flush()
+                # 强制落盘：否则断电/硬关机时，最后写入的内容可能仍在系统页缓存里丢失。
+                os.fsync(f.fileno())
             return None
         except OSError as e:
             last = e
@@ -1524,6 +1527,8 @@ def run_file(path, opts):
             f.write(f"# 同声传译记录 {datetime.now():%Y-%m-%d %H:%M}\n\n")
             for en, zh in lines:
                 f.write(f"**EN:** {en}\n\n**ZH:** {zh}\n\n---\n\n")
+            f.flush()
+            os.fsync(f.fileno())
         print("已保存：", fn)
 
 
