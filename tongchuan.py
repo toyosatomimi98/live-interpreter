@@ -1107,7 +1107,7 @@ class GUI:
 
         tk.Label(ctrl, text="识别模型：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
         self.model_box = ttk.Combobox(ctrl, textvariable=self.model_var,
-                                      values=["base.en", "small.en", "medium.en",
+                                      values=["tiny.en", "base.en", "small.en", "medium.en",
                                               "large-v3-turbo", "large-v3"],
                                       width=16, state="readonly")
         self.model_box.pack(side="left", padx=(0, 2))
@@ -1570,8 +1570,8 @@ def mic_test():
 def main():
     ap = argparse.ArgumentParser(description="麦克风实时英语→中语同声传译")
     ap.add_argument("--model", default="base.en",
-                    help="whisper 模型（base.en/small.en/medium.en/large-v3-turbo/large-v3；"
-                         "实时默认 base.en，大模型建议文件模式）")
+                    help="whisper 模型（tiny.en/base.en/small.en/medium.en/"
+                         "large-v3-turbo/large-v3；实时默认 base.en，tiny.en 最快，大模型建议文件模式）")
     ap.add_argument("--console", action="store_true", help="控制台模式")
     ap.add_argument("--file", default=None, help="识别单个音频文件（mp3/wav 等）")
     ap.add_argument("--save", action="store_true", help="文件模式保存 markdown 记录")

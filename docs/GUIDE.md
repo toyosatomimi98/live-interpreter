@@ -69,8 +69,8 @@ name (e.g. `同声传译_缓存一致性_20260901_130515.md`).
 ## Options
 
 ```text
---model base.en|small.en|medium.en|large-v3-turbo|large-v3
-                                    Whisper model (for live: default base.en)
+--model tiny.en|base.en|small.en|medium.en|large-v3-turbo|large-v3
+                                    Whisper model (live default base.en; tiny.en fastest)
 --voice / --no-voice                 Enable / disable spoken Chinese
 --source mic|system                  Input source (microphone or system audio)
 --sensitivity N                      Mic sensitivity (1–8, default 3)
