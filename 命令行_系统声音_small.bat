@@ -22,8 +22,9 @@ if not exist ".venv\Scripts\python.exe" (
 echo =====================================================
 echo   System sound (loopback) live  model: %MODEL%
 echo   max_seg=%MAXSEG%s  min_silence=%MINSILENCE%s  min_words=%MINWORDS%
+echo   Also SAVES audio to recordings\ (--save-audio)
 echo   Press Ctrl+C to stop.
 echo =====================================================
 REM auto-send a carriage-return to skip the "press Enter" wait
-echo. | ".venv\Scripts\python.exe" tongchuan.py --console --source system --model %MODEL% --max-seg %MAXSEG% --min-silence %MINSILENCE% --min-words %MINWORDS% --no-voice
+echo. | ".venv\Scripts\python.exe" tongchuan.py --console --source system --model %MODEL% --max-seg %MAXSEG% --min-silence %MINSILENCE% --min-words %MINWORDS% --save-audio --no-voice
 pause
