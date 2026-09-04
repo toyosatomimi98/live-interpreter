@@ -7,7 +7,9 @@ cd /d "%~dp0"
 set PYTHONPATH=%CD%
 
 REM ==== adjustable ====
-set "MODEL=large-v3-turbo"
+REM MODEL: small.en = good speed/accuracy balance on a laptop
+REM        large-v3-turbo = best accuracy but much slower offline
+set "MODEL=small.en"
 REM COURSE: optional courseware Markdown for glossary/term alignment (empty = off)
 set "COURSE="
 set "FILE=%~1"

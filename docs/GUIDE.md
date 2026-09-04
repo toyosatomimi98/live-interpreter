@@ -66,6 +66,35 @@ summarize the whole transcript** and rewrites the Markdown with a new title
 (topic + time) plus a `## 内容摘要` section, and renames the file to a topic-based
 name (e.g. `同声传译_缓存一致性_20260901_130515.md`).
 
+### Recommended workflow: light live model, then offline re-translation
+
+On a modest CPU you usually can only keep up in real time with the lightest
+model, but accuracy matters for review. So use a **two-pass** approach.
+
+**In class (real time, low latency):** show live captions while saving the audio.
+Use the lightest model:
+
+```bat
+命令行_录音系统声音.bat    :: MODEL=tiny.en, live captions + --save-audio
+```
+
+This writes the raw lecture audio to `recordings\同传录音_*.wav` and prints live
+EN/ZH as it goes. Press Ctrl+C to stop.
+
+**At home (offline, higher accuracy):** re-transcribe the saved recording with a
+larger model. Offline has no real-time constraint:
+
+```bat
+命令行_文件模式.bat        :: MODEL=small.en by default (laptop-friendly)
+命令行_文件模式.bat        :: set MODEL=large-v3-turbo for the best accuracy
+```
+
+It auto-picks the newest `recordings\*.wav`, prints EN/ZH, and with `--save`
+writes `transcripts\录音稿_*.md`. Add `--course <courseware.md>` for glossary /
+term alignment. On a slow laptop `small.en` balances speed and accuracy;
+`large-v3-turbo` is the most accurate but can take a long time offline (roughly
+real-time ×4–5).
+
 ## Options
 
 ```text
