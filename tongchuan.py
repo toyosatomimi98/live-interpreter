@@ -1026,6 +1026,7 @@ class GUI:
         self._last_count = 0
 
         self.pipeline = None
+        self._wm_im = None  # 字幕水印图（30% 透明，在 _build_widgets 里构建）
 
         self._build_widgets()
         self._refresh_courses()
@@ -1045,6 +1046,7 @@ class GUI:
         sidebar.pack_propagate(False)
 
         self._mascot = None
+        self._wm_im = None
         mascot_path = None
         for _name in ("mascot.png", "gui_mascot.png"):
             _p = os.path.join(proj_dir, "docs", _name)
@@ -1061,8 +1063,16 @@ class GUI:
                                   max(1, int(_oh * _scale))), Image.LANCZOS)
                 self._mascot = ImageTk.PhotoImage(_im)
                 tk.Label(sidebar, image=self._mascot, bg="#ffffff", bd=0).pack(padx=8, pady=8)
+                # 字幕水印：小尺寸 + 30% 透明度
+                _ws = min(150 / _ow, 150 / _oh)
+                _wi = Image.open(mascot_path).convert("RGBA").resize(
+                    (max(1, int(_ow * _ws)), max(1, int(_oh * _ws))), Image.LANCZOS)
+                _r, _g, _b, _a = _wi.split()
+                _a = _a.point(lambda v: int(v * 0.30))
+                self._wm_im = ImageTk.PhotoImage(Image.merge("RGBA", (_r, _g, _b, _a)))
             except Exception:
                 self._mascot = None
+                self._wm_im = None
         if self._mascot is None:
             tk.Label(sidebar, text="(暂无头像，支持 docs/mascot.png)",
                      bg="#ffffff", fg="#c0c4cc", font=("Microsoft YaHei UI", 9),
@@ -1148,21 +1158,8 @@ class GUI:
                             font=("Microsoft YaHei UI", 10))
         self.sec.pack(side="left", padx=(10, 0))
 
-        en_card = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
-        en_card.pack(fill="x", padx=12, pady=6)
-        tk.Label(en_card, text="英文原文", bg="#ffffff", fg="#6b7280",
-                 font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=10, pady=(8, 0))
-        tk.Label(en_card, textvariable=self.en_var, bg="#ffffff", fg="#111827",
-                 font=("Microsoft YaHei UI", 15), wraplength=660, justify="left",
-                 anchor="w").pack(fill="x", padx=10, pady=(2, 10))
-
-        zh_card = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
-        zh_card.pack(fill="x", padx=12, pady=6)
-        tk.Label(zh_card, text="中文翻译", bg="#ffffff", fg="#6b7280",
-                 font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=10, pady=(8, 0))
-        tk.Label(zh_card, textvariable=self.zh_var, bg="#ffffff", fg="#0b7a3b",
-                 font=("Microsoft YaHei UI", 17, "bold"), wraplength=660, justify="left",
-                 anchor="w").pack(fill="x", padx=10, pady=(2, 10))
+        self._make_subtitle_card(content, "英文原文", self.en_var, "#111827", 15, False, 100)
+        self._make_subtitle_card(content, "中文翻译", self.zh_var, "#0b7a3b", 17, True, 110)
 
         ctrl = tk.Frame(content, bg="#f4f6fb")
         ctrl.pack(fill="x", padx=12, pady=6)
@@ -1190,6 +1187,30 @@ class GUI:
         self.log.pack(fill="both", expand=True, padx=6, pady=6)
         self.log.tag_configure("gray", foreground="#9aa0a6")
 
+
+    def _make_subtitle_card(self, parent, header, var, fg, font_size, bold, height):
+        """中英字幕卡片：Canvas 绘制，右下角 30% 透明水印并压在文字下方。"""
+        card = tk.Frame(parent, bg="#ffffff", highlightbackground="#e1e6f0",
+                        highlightthickness=1)
+        card.pack(fill="x", padx=12, pady=6)
+        cv = tk.Canvas(card, bg="#ffffff", highlightthickness=0, height=height)
+        cv.pack(fill="x", padx=2, pady=2)
+        wm = cv.create_image(0, 0, image=self._wm_im, anchor="se") if self._wm_im else None
+        cv.create_text(10, 8, anchor="nw", text=header, fill="#6b7280",
+                       font=("Microsoft YaHei UI", 10))
+        txt = cv.create_text(10, 30, anchor="nw", width=0, text=var.get(), fill=fg,
+                             font=("Microsoft YaHei UI", font_size,
+                                   "bold" if bold else "normal"), justify="left")
+
+        def _cfg(e):
+            if wm:
+                cv.coords(wm, e.width, e.height)
+                cv.tag_lower(wm)
+            cv.itemconfigure(txt, width=max(50, e.width - 24))
+
+        cv.bind("<Configure>", _cfg)
+        var.trace_add("write", lambda *a: cv.itemconfigure(txt, text=var.get()))
+        return card
 
     # ---------------- 设备 ----------------
     def _refresh_devices(self):
