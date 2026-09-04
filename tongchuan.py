@@ -1002,7 +1002,8 @@ class GUI:
         self.root = root
         self.opts = opts
         root.title("同声传译 · 麦克风实时翻译")
-        root.geometry("860x640")
+        root.geometry("1040x700")
+        root.minsize(1000, 660)
         root.configure(bg="#f4f6fb")
 
         self.en_var = tk.StringVar(value="等待说话…")
@@ -1032,13 +1033,108 @@ class GUI:
         self._poll()
 
     def _build_widgets(self):
-        top = tk.Frame(self.root, bg="#f4f6fb")
-        top.pack(fill="x", padx=12, pady=(10, 4))
-        tk.Label(top, textvariable=self.status_var, bg="#f4f6fb",
-                 fg="#1f6feb", font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
+        proj_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # 音量条 + 说话状态
-        meter_row = tk.Frame(self.root, bg="#f4f6fb")
+        main = tk.Frame(self.root, bg="#f4f6fb")
+        main.pack(fill="both", expand=True)
+
+        # ---------------- side bar: mascot + settings ----------------
+        sidebar = tk.Frame(main, bg="#ffffff", highlightbackground="#e1e6f0",
+                           highlightthickness=1, width=250)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+
+        self._mascot = None
+        mascot_path = None
+        for _name in ("mascot.png", "gui_mascot.png"):
+            _p = os.path.join(proj_dir, "docs", _name)
+            if os.path.exists(_p):
+                mascot_path = _p
+                break
+        if mascot_path:
+            try:
+                from PIL import Image, ImageTk
+                _im = Image.open(mascot_path).convert("RGBA")
+                _ow, _oh = _im.size
+                _scale = min(220 / _ow, 200 / _oh)
+                _im = _im.resize((max(1, int(_ow * _scale)),
+                                  max(1, int(_oh * _scale))), Image.LANCZOS)
+                self._mascot = ImageTk.PhotoImage(_im)
+                tk.Label(sidebar, image=self._mascot, bg="#ffffff", bd=0).pack(padx=8, pady=8)
+            except Exception:
+                self._mascot = None
+        if self._mascot is None:
+            tk.Label(sidebar, text="(暂无头像，支持 docs/mascot.png)",
+                     bg="#ffffff", fg="#c0c4cc", font=("Microsoft YaHei UI", 9),
+                     wraplength=220, justify="center").pack(pady=10)
+
+        tk.Frame(sidebar, bg="#e9edf4", height=2).pack(fill="x", padx=10, pady=(6, 8))
+
+        tk.Label(sidebar, text="声音来源", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10)
+        self.source_box = ttk.Combobox(sidebar, values=["麦克风", "系统声音"],
+                                       textvariable=self.source_var, width=24, state="readonly")
+        self.source_box.pack(anchor="w", padx=10, pady=(2, 6))
+        self.source_box.bind("<<ComboboxSelected>>", self._on_source)
+
+        tk.Label(sidebar, text="设备", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(6, 0))
+        _dev = tk.Frame(sidebar, bg="#ffffff"); _dev.pack(fill="x", padx=10)
+        self.device_box = ttk.Combobox(_dev, textvariable=self.device_var, width=18,
+                                       state="readonly")
+        self.device_box.pack(side="left", fill="x", expand=True)
+        tk.Button(_dev, text="刷新", command=self._refresh_devices,
+                  bg="#e5e7eb", fg="#374151", font=("Microsoft YaHei UI", 9),
+                  padx=6, pady=2, bd=0, cursor="hand2").pack(side="left", padx=(4, 0))
+
+        tk.Label(sidebar, text="识别模型", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
+        self.model_box = ttk.Combobox(sidebar, textvariable=self.model_var,
+                                      values=["tiny.en", "base.en", "small.en", "medium.en",
+                                              "large-v3-turbo", "large-v3"],
+                                      width=22, state="readonly")
+        self.model_box.pack(anchor="w", padx=10, pady=(2, 4))
+        self.model_box.bind("<<ComboboxSelected>>", self._on_model)
+        tk.Label(sidebar, text="[越大越准但越慢；大模型建议配合文件模式]",
+                 bg="#ffffff", fg="#9ca3af", font=("Microsoft YaHei UI", 8),
+                 wraplength=220, justify="left").pack(anchor="w", padx=10)
+
+        tk.Label(sidebar, text="课程课件", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
+        _crs = tk.Frame(sidebar, bg="#ffffff"); _crs.pack(fill="x", padx=10)
+        self.course_box = ttk.Combobox(_crs, textvariable=self.course_var, width=18,
+                                       state="readonly")
+        self.course_box.pack(side="left", fill="x", expand=True)
+        tk.Button(_crs, text="刷新", command=self._refresh_courses,
+                  bg="#e5e7eb", fg="#374151", font=("Microsoft YaHei UI", 9),
+                  padx=6, pady=2, bd=0, cursor="hand2").pack(side="left", padx=(4, 0))
+
+        tk.Label(sidebar, text="灵敏度（低=更灵敏，高=抗噪）", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
+        _sens = tk.Frame(sidebar, bg="#ffffff"); _sens.pack(fill="x", padx=10)
+        self.sens_scale = ttk.Scale(_sens, from_=1.0, to=8.0, value=3.0, command=self._on_sens)
+        self.sens_scale.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.sens_val = tk.Label(_sens, text="3.0", bg="#ffffff", font=("Microsoft YaHei UI", 10))
+        self.sens_val.pack(side="left")
+
+        tk.Label(sidebar, text="分段上限", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(8, 0))
+        self.maxseg_box = ttk.Combobox(sidebar, textvariable=self.maxseg_var,
+                                       values=["4", "5", "6", "8", "10"], width=22, state="readonly")
+        self.maxseg_box.pack(anchor="w", padx=10, pady=(2, 4))
+        tk.Label(sidebar, text="[小=更快但更易切断]", bg="#ffffff", fg="#9ca3af",
+                 font=("Microsoft YaHei UI", 8)).pack(anchor="w", padx=10)
+
+        # ---------------- main content ----------------
+        content = tk.Frame(main, bg="#f4f6fb")
+        content.pack(side="left", fill="both", expand=True)
+
+        top = tk.Frame(content, bg="#f4f6fb")
+        top.pack(fill="x", padx=12, pady=(10, 4))
+        tk.Label(top, textvariable=self.status_var, bg="#f4f6fb", fg="#1f6feb",
+                 font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
+
+        meter_row = tk.Frame(content, bg="#f4f6fb")
         meter_row.pack(fill="x", padx=12, pady=(0, 4))
         self.meter = ttk.Progressbar(meter_row, orient="horizontal", maximum=1.0, value=0.0)
         self.meter.pack(side="left", fill="x", expand=True, padx=(0, 10))
@@ -1052,28 +1148,23 @@ class GUI:
                             font=("Microsoft YaHei UI", 10))
         self.sec.pack(side="left", padx=(10, 0))
 
-        en_card = tk.Frame(self.root, bg="#ffffff", highlightbackground="#e1e6f0",
-                           highlightthickness=1)
+        en_card = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
         en_card.pack(fill="x", padx=12, pady=6)
         tk.Label(en_card, text="英文原文", bg="#ffffff", fg="#6b7280",
                  font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=10, pady=(8, 0))
-        en_lbl = tk.Label(en_card, textvariable=self.en_var, bg="#ffffff", fg="#111827",
-                          font=("Microsoft YaHei UI", 15), wraplength=820, justify="left",
-                          anchor="w")
-        en_lbl.pack(fill="x", padx=10, pady=(2, 10))
+        tk.Label(en_card, textvariable=self.en_var, bg="#ffffff", fg="#111827",
+                 font=("Microsoft YaHei UI", 15), wraplength=660, justify="left",
+                 anchor="w").pack(fill="x", padx=10, pady=(2, 10))
 
-        zh_card = tk.Frame(self.root, bg="#ffffff", highlightbackground="#e1e6f0",
-                           highlightthickness=1)
+        zh_card = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
         zh_card.pack(fill="x", padx=12, pady=6)
         tk.Label(zh_card, text="中文翻译", bg="#ffffff", fg="#6b7280",
                  font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=10, pady=(8, 0))
-        zh_lbl = tk.Label(zh_card, textvariable=self.zh_var, bg="#ffffff", fg="#0b7a3b",
-                          font=("Microsoft YaHei UI", 17, "bold"), wraplength=820,
-                          justify="left", anchor="w")
-        zh_lbl.pack(fill="x", padx=10, pady=(2, 10))
+        tk.Label(zh_card, textvariable=self.zh_var, bg="#ffffff", fg="#0b7a3b",
+                 font=("Microsoft YaHei UI", 17, "bold"), wraplength=660, justify="left",
+                 anchor="w").pack(fill="x", padx=10, pady=(2, 10))
 
-        # 控制区
-        ctrl = tk.Frame(self.root, bg="#f4f6fb")
+        ctrl = tk.Frame(content, bg="#f4f6fb")
         ctrl.pack(fill="x", padx=12, pady=6)
         self.start_btn = tk.Button(ctrl, text="▶ 开始", command=self.toggle,
                                    bg="#1f6feb", fg="white", font=("Microsoft YaHei UI", 11),
@@ -1083,80 +1174,22 @@ class GUI:
                                   bg="#e5e7eb", fg="#374151", font=("Microsoft YaHei UI", 10),
                                   padx=12, pady=6, bd=0, cursor="hand2")
         self.save_btn.pack(side="left", padx=4)
-
-        tk.Checkbutton(ctrl, text="中文语音播报", variable=self.voice_var,
-                       command=self._on_voice, bg="#f4f6fb", font=("Microsoft YaHei UI", 10),
+        tk.Checkbutton(ctrl, text="中文语音播报", variable=self.voice_var, command=self._on_voice,
+                       bg="#f4f6fb", font=("Microsoft YaHei UI", 10),
                        activebackground="#f4f6fb").pack(side="left", padx=12)
-
         tk.Checkbutton(ctrl, text="录制音频存文件", variable=self.rec_var,
                        bg="#f4f6fb", font=("Microsoft YaHei UI", 10),
                        activebackground="#f4f6fb").pack(side="left", padx=4)
 
-        tk.Label(ctrl, text="声音来源：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
-        self.source_box = ttk.Combobox(ctrl, values=["麦克风", "系统声音"],
-                                       textvariable=self.source_var, width=8, state="readonly")
-        self.source_box.pack(side="left", padx=(0, 6))
-        self.source_box.bind("<<ComboboxSelected>>", self._on_source)
-        tk.Label(ctrl, text="设备：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left")
-        self.device_box = ttk.Combobox(ctrl, textvariable=self.device_var, width=30,
-                                       state="readonly")
-        self.device_box.pack(side="left", padx=(0, 4))
-        tk.Button(ctrl, text="刷新", command=self._refresh_devices,
-                  bg="#e5e7eb", fg="#374151", font=("Microsoft YaHei UI", 9),
-                  padx=8, pady=2, bd=0, cursor="hand2").pack(side="left", padx=2)
-
-        tk.Label(ctrl, text="识别模型：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
-        self.model_box = ttk.Combobox(ctrl, textvariable=self.model_var,
-                                      values=["tiny.en", "base.en", "small.en", "medium.en",
-                                              "large-v3-turbo", "large-v3"],
-                                      width=16, state="readonly")
-        self.model_box.pack(side="left", padx=(0, 2))
-        self.model_box.bind("<<ComboboxSelected>>", self._on_model)
-        tk.Label(ctrl, text="[越大越准但越慢；大模型建议配合文件模式]", bg="#f4f6fb",
-                 fg="#9ca3af", font=("Microsoft YaHei UI", 9)).pack(side="left")
-
-        # 课程课件
-        course_row = tk.Frame(self.root, bg="#f4f6fb")
-        course_row.pack(fill="x", padx=12, pady=2)
-        tk.Label(course_row, text="课程课件：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(0, 2))
-        self.course_box = ttk.Combobox(course_row, textvariable=self.course_var,
-                                       width=26, state="readonly")
-        self.course_box.pack(side="left", padx=(0, 4))
-        tk.Button(course_row, text="刷新", command=self._refresh_courses,
-                  bg="#e5e7eb", fg="#374151", font=("Microsoft YaHei UI", 9),
-                  padx=8, pady=2, bd=0, cursor="hand2").pack(side="left", padx=2)
-        tk.Label(course_row, text="[选课件的 Markdown，术语译法与识别更贴合]", bg="#f4f6fb",
-                 fg="#9ca3af", font=("Microsoft YaHei UI", 9)).pack(side="left")
-
-        # 灵敏度
-        sens_row = tk.Frame(self.root, bg="#f4f6fb")
-        sens_row.pack(fill="x", padx=12, pady=2)
-        tk.Label(sens_row, text="灵敏度 (低=灵敏，高=抗噪)", bg="#f4f6fb",
-                 font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(0, 8))
-        self.sens_scale = ttk.Scale(sens_row, from_=1.0, to=8.0, value=3.0,
-                                    command=self._on_sens)
-        self.sens_scale.pack(side="left", fill="x", expand=True, padx=(0, 12))
-        self.sens_val = tk.Label(sens_row, text="3.0", bg="#f4f6fb", font=("Microsoft YaHei UI", 10))
-        self.sens_val.pack(side="left")
-
-        tk.Label(sens_row, text="分段上限：", bg="#f4f6fb", font=("Microsoft YaHei UI", 10)).pack(side="left", padx=(12, 2))
-        self.maxseg_box = ttk.Combobox(sens_row, textvariable=self.maxseg_var,
-                                       values=["4", "5", "6", "8", "10"], width=4, state="readonly")
-        self.maxseg_box.pack(side="left", padx=(0, 2))
-        tk.Label(sens_row, text="秒/段 [小=快但更易切断]", bg="#f4f6fb", fg="#9ca3af",
-                 font=("Microsoft YaHei UI", 9)).pack(side="left")
-
-        # 记录
-        tk.Label(self.root, text="记录", bg="#f4f6fb", fg="#6b7280",
+        tk.Label(content, text="记录", bg="#f4f6fb", fg="#6b7280",
                  font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=12, pady=(10, 0))
-        log_frame = tk.Frame(self.root, bg="#ffffff", highlightbackground="#e1e6f0",
-                             highlightthickness=1)
+        log_frame = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
         log_frame.pack(fill="both", expand=True, padx=12, pady=(2, 12))
         self.log = tk.Text(log_frame, bg="#ffffff", fg="#374151", wrap="word",
                            font=("Microsoft YaHei UI", 10), bd=0, state="disabled")
         self.log.pack(fill="both", expand=True, padx=6, pady=6)
-        # 日志面板默认文字灰色；中英字幕行保持原色（见 _append_log 的 tag 选择）。
         self.log.tag_configure("gray", foreground="#9aa0a6")
+
 
     # ---------------- 设备 ----------------
     def _refresh_devices(self):
