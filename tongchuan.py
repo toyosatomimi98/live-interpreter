@@ -1158,8 +1158,21 @@ class GUI:
                             font=("Microsoft YaHei UI", 10))
         self.sec.pack(side="left", padx=(10, 0))
 
-        self._make_subtitle_card(content, "英文原文", self.en_var, "#111827", 15, False, 100)
-        self._make_subtitle_card(content, "中文翻译", self.zh_var, "#0b7a3b", 17, True, 110)
+        en_card = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
+        en_card.pack(fill="x", padx=12, pady=6)
+        tk.Label(en_card, text="英文原文", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=10, pady=(8, 0))
+        tk.Label(en_card, textvariable=self.en_var, bg="#ffffff", fg="#111827",
+                 font=("Microsoft YaHei UI", 15), wraplength=660, justify="left",
+                 anchor="w").pack(fill="x", padx=10, pady=(2, 10))
+
+        zh_card = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
+        zh_card.pack(fill="x", padx=12, pady=6)
+        tk.Label(zh_card, text="中文翻译", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=10, pady=(8, 0))
+        tk.Label(zh_card, textvariable=self.zh_var, bg="#ffffff", fg="#0b7a3b",
+                 font=("Microsoft YaHei UI", 17, "bold"), wraplength=660, justify="left",
+                 anchor="w").pack(fill="x", padx=10, pady=(2, 10))
 
         ctrl = tk.Frame(content, bg="#f4f6fb")
         ctrl.pack(fill="x", padx=12, pady=6)
@@ -1186,31 +1199,10 @@ class GUI:
                            font=("Microsoft YaHei UI", 10), bd=0, state="disabled")
         self.log.pack(fill="both", expand=True, padx=6, pady=6)
         self.log.tag_configure("gray", foreground="#9aa0a6")
-
-
-    def _make_subtitle_card(self, parent, header, var, fg, font_size, bold, height):
-        """中英字幕卡片：Canvas 绘制，右下角 30% 透明水印并压在文字下方。"""
-        card = tk.Frame(parent, bg="#ffffff", highlightbackground="#e1e6f0",
-                        highlightthickness=1)
-        card.pack(fill="x", padx=12, pady=6)
-        cv = tk.Canvas(card, bg="#ffffff", highlightthickness=0, height=height)
-        cv.pack(fill="x", padx=2, pady=2)
-        wm = cv.create_image(0, 0, image=self._wm_im, anchor="se") if self._wm_im else None
-        cv.create_text(10, 8, anchor="nw", text=header, fill="#6b7280",
-                       font=("Microsoft YaHei UI", 10))
-        txt = cv.create_text(10, 30, anchor="nw", width=0, text=var.get(), fill=fg,
-                             font=("Microsoft YaHei UI", font_size,
-                                   "bold" if bold else "normal"), justify="left")
-
-        def _cfg(e):
-            if wm:
-                cv.coords(wm, e.width, e.height)
-                cv.tag_lower(wm)
-            cv.itemconfigure(txt, width=max(50, e.width - 24))
-
-        cv.bind("<Configure>", _cfg)
-        var.trace_add("write", lambda *a: cv.itemconfigure(txt, text=var.get()))
-        return card
+        # 日志区右下角半透明水印（浮在文字之上，30% 透明，文字可透出）
+        if self._wm_im:
+            self._log_wm = tk.Label(log_frame, image=self._wm_im, bg="#ffffff", bd=0)
+            self._log_wm.place(relx=1.0, rely=1.0, anchor="se", x=-12, y=-12)
 
     # ---------------- 设备 ----------------
     def _refresh_devices(self):
