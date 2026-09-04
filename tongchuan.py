@@ -1056,12 +1056,16 @@ class GUI:
         if mascot_path:
             try:
                 from PIL import Image, ImageTk
-                _im = Image.open(mascot_path).convert("RGBA")
-                self._mascot_src = _im.copy()
-                _ow, _oh = _im.size
+                _src = Image.open(mascot_path).convert("RGBA")
+                _ow, _oh = _src.size
+                # 右侧图：30% 透明、全分辨率，缩放时以此为基础
+                _r, _g, _b, _a = _src.split()
+                _a = _a.point(lambda v: int(v * 0.30))
+                self._mascot_src = Image.merge("RGBA", (_r, _g, _b, _a))
+                # 侧边栏头像：不透明，缩到 220x200 内
                 _scale = min(220 / _ow, 200 / _oh)
-                _im = _im.resize((max(1, int(_ow * _scale)),
-                                  max(1, int(_oh * _scale))), Image.LANCZOS)
+                _im = _src.resize((max(1, int(_ow * _scale)),
+                                   max(1, int(_oh * _scale))), Image.LANCZOS)
                 self._mascot = ImageTk.PhotoImage(_im)
                 tk.Label(sidebar, image=self._mascot, bg="#ffffff", bd=0).pack(padx=8, pady=8)
             except Exception:
@@ -1189,30 +1193,36 @@ class GUI:
                  font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=12, pady=(10, 0))
         log_frame = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
         log_frame.pack(fill="both", expand=True, padx=12, pady=(2, 12))
-        # 左：日志文字；右：mascot 并排，不重叠
-        _log_left = tk.Frame(log_frame, bg="#ffffff")
-        _log_left.pack(side="left", fill="both", expand=True)
-        self.log = tk.Text(_log_left, bg="#ffffff", fg="#374151", wrap="word",
+        # 左：日志文字（列可伸缩）；右：mascot（列固定宽）。用 grid 保证总宽=日志框宽。
+        log_frame.grid_columnconfigure(0, weight=1)
+        log_frame.grid_columnconfigure(1, weight=0)
+        log_frame.grid_rowconfigure(0, weight=1)
+        self.log = tk.Text(log_frame, bg="#ffffff", fg="#374151", wrap="word",
                            font=("Microsoft YaHei UI", 10), bd=0, state="disabled")
-        self.log.pack(fill="both", expand=True, padx=6, pady=6)
+        self.log.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         self.log.tag_configure("gray", foreground="#9aa0a6")
         self._side_img = None
+        self._side = None
         if self._mascot_src:
-            _side = tk.Frame(log_frame, bg="#ffffff", width=200)
-            _side.pack(side="right", fill="y")
-            _side.pack_propagate(False)
-            self._side_label = tk.Label(_side, bg="#ffffff", bd=0)
-            self._side_label.pack(fill="both", expand=True, padx=4, pady=4)
-            _side.bind("<Configure>", self._on_side_resize)
+            self._side = tk.Frame(log_frame, bg="#ffffff", width=0)
+            self._side.grid(row=0, column=1, sticky="ns")
+            self._side.grid_propagate(False)
+            self._side_label = tk.Label(self._side, bg="#ffffff", bd=0)
+            self._side_label.pack(fill="both", expand=True)
+            log_frame.bind("<Configure>", self._on_log_layout)
 
-    def _on_side_resize(self, event):
-        """让右侧 mascot 随面板高度缩放（保持比例，与文字并排不重叠）。"""
-        if not getattr(self, "_mascot_src", None):
+    def _on_log_layout(self, event):
+        """按日志框高度布局右侧 mascot（30% 透明、撑满高、宽=高*比例；总宽不变）。"""
+        if not self._mascot_src or self._side is None:
             return
-        w = max(30, event.width - 8)
-        h = max(30, event.height - 8)
         src = self._mascot_src
-        sc = min(w / src.width, h / src.height)
+        h = max(30, event.height - 10)
+        aspect = src.width / src.height
+        # 图片列宽=高度*比例，但不超日志框宽度的 55%，保证左边文字有足够空间
+        w = max(30, min(int(h * aspect), int(event.width * 0.55)))
+        if int(self._side.cget("width")) != w:
+            self._side.configure(width=w)
+        sc = min((w - 2) / src.width, (event.height - 8) / src.height)
         nw = max(1, int(src.width * sc))
         nh = max(1, int(src.height * sc))
         from PIL import Image, ImageTk
