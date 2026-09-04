@@ -1027,6 +1027,7 @@ class GUI:
 
         self.pipeline = None
         self._wm_im = None  # 字幕水印图（30% 透明，在 _build_widgets 里构建）
+        self._wm_base = None  # 日志水印源图（原始分辨率 + 30% 透明，缩放时以此为基础）
 
         self._build_widgets()
         self._refresh_courses()
@@ -1063,15 +1064,15 @@ class GUI:
                                   max(1, int(_oh * _scale))), Image.LANCZOS)
                 self._mascot = ImageTk.PhotoImage(_im)
                 tk.Label(sidebar, image=self._mascot, bg="#ffffff", bd=0).pack(padx=8, pady=8)
-                # 字幕水印：小尺寸 + 30% 透明度
-                _ws = min(150 / _ow, 150 / _oh)
-                _wi = Image.open(mascot_path).convert("RGBA").resize(
-                    (max(1, int(_ow * _ws)), max(1, int(_oh * _ws))), Image.LANCZOS)
-                _r, _g, _b, _a = _wi.split()
+                # 日志水印源图：原始分辨率 + 30% 透明度，缩放时以此为基础
+                self._wm_base = Image.open(mascot_path).convert("RGBA")
+                _r, _g, _b, _a = self._wm_base.split()
                 _a = _a.point(lambda v: int(v * 0.30))
-                self._wm_im = ImageTk.PhotoImage(Image.merge("RGBA", (_r, _g, _b, _a)))
+                self._wm_base = Image.merge("RGBA", (_r, _g, _b, _a))
+                self._wm_im = None
             except Exception:
                 self._mascot = None
+                self._wm_base = None
                 self._wm_im = None
         if self._mascot is None:
             tk.Label(sidebar, text="(暂无头像，支持 docs/mascot.png)",
@@ -1199,10 +1200,25 @@ class GUI:
                            font=("Microsoft YaHei UI", 10), bd=0, state="disabled")
         self.log.pack(fill="both", expand=True, padx=6, pady=6)
         self.log.tag_configure("gray", foreground="#9aa0a6")
-        # 日志区右下角半透明水印（浮在文字之上，30% 透明，文字可透出）
-        if self._wm_im:
-            self._log_wm = tk.Label(log_frame, image=self._wm_im, bg="#ffffff", bd=0)
-            self._log_wm.place(relx=1.0, rely=1.0, anchor="se", x=-12, y=-12)
+        # 日志区右下角半透明水印：随日志框高度缩放，右下角对齐（30% 透明）
+        if self._wm_base:
+            self._log_wm = tk.Label(log_frame, bg="#ffffff", bd=0)
+            self._log_wm.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
+            log_frame.bind("<Configure>", self._on_log_resize)
+
+    def _on_log_resize(self, event):
+        """按日志框高度缩放水印（保持比例、30% 透明、右下角对齐）。"""
+        if self._wm_base is None:
+            return
+        target_h = max(40, event.height - 12)
+        bw, bh = self._wm_base.size
+        target_w = max(1, int(bw * target_h / bh))
+        if getattr(self, "_wm_size", None) == (target_h, target_w):
+            return
+        self._wm_size = (target_h, target_w)
+        from PIL import Image, ImageTk
+        self._wm_im = ImageTk.PhotoImage(self._wm_base.resize((target_w, target_h), Image.LANCZOS))
+        self._log_wm.configure(image=self._wm_im)
 
     # ---------------- 设备 ----------------
     def _refresh_devices(self):
