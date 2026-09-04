@@ -1026,8 +1026,7 @@ class GUI:
         self._last_count = 0
 
         self.pipeline = None
-        self._wm_im = None  # 字幕水印图（30% 透明，在 _build_widgets 里构建）
-        self._wm_base = None  # 日志水印源图（原始分辨率 + 30% 透明，缩放时以此为基础）
+        self._mascot_src = None  # 右侧 mascot 原图（全分辨率，用于缩放）
 
         self._build_widgets()
         self._refresh_courses()
@@ -1047,7 +1046,7 @@ class GUI:
         sidebar.pack_propagate(False)
 
         self._mascot = None
-        self._wm_im = None
+        self._mascot_src = None
         mascot_path = None
         for _name in ("mascot.png", "gui_mascot.png"):
             _p = os.path.join(proj_dir, "docs", _name)
@@ -1058,22 +1057,16 @@ class GUI:
             try:
                 from PIL import Image, ImageTk
                 _im = Image.open(mascot_path).convert("RGBA")
+                self._mascot_src = _im.copy()
                 _ow, _oh = _im.size
                 _scale = min(220 / _ow, 200 / _oh)
                 _im = _im.resize((max(1, int(_ow * _scale)),
                                   max(1, int(_oh * _scale))), Image.LANCZOS)
                 self._mascot = ImageTk.PhotoImage(_im)
                 tk.Label(sidebar, image=self._mascot, bg="#ffffff", bd=0).pack(padx=8, pady=8)
-                # 日志水印源图：原始分辨率 + 30% 透明度，缩放时以此为基础
-                self._wm_base = Image.open(mascot_path).convert("RGBA")
-                _r, _g, _b, _a = self._wm_base.split()
-                _a = _a.point(lambda v: int(v * 0.30))
-                self._wm_base = Image.merge("RGBA", (_r, _g, _b, _a))
-                self._wm_im = None
             except Exception:
                 self._mascot = None
-                self._wm_base = None
-                self._wm_im = None
+                self._mascot_src = None
         if self._mascot is None:
             tk.Label(sidebar, text="(暂无头像，支持 docs/mascot.png)",
                      bg="#ffffff", fg="#c0c4cc", font=("Microsoft YaHei UI", 9),
@@ -1196,29 +1189,35 @@ class GUI:
                  font=("Microsoft YaHei UI", 10)).pack(anchor="w", padx=12, pady=(10, 0))
         log_frame = tk.Frame(content, bg="#ffffff", highlightbackground="#e1e6f0", highlightthickness=1)
         log_frame.pack(fill="both", expand=True, padx=12, pady=(2, 12))
-        self.log = tk.Text(log_frame, bg="#ffffff", fg="#374151", wrap="word",
+        # 左：日志文字；右：mascot 并排，不重叠
+        _log_left = tk.Frame(log_frame, bg="#ffffff")
+        _log_left.pack(side="left", fill="both", expand=True)
+        self.log = tk.Text(_log_left, bg="#ffffff", fg="#374151", wrap="word",
                            font=("Microsoft YaHei UI", 10), bd=0, state="disabled")
         self.log.pack(fill="both", expand=True, padx=6, pady=6)
         self.log.tag_configure("gray", foreground="#9aa0a6")
-        # 日志区右下角半透明水印：随日志框高度缩放，右下角对齐（30% 透明）
-        if self._wm_base:
-            self._log_wm = tk.Label(log_frame, bg="#ffffff", bd=0)
-            self._log_wm.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
-            log_frame.bind("<Configure>", self._on_log_resize)
+        self._side_img = None
+        if self._mascot_src:
+            _side = tk.Frame(log_frame, bg="#ffffff", width=200)
+            _side.pack(side="right", fill="y")
+            _side.pack_propagate(False)
+            self._side_label = tk.Label(_side, bg="#ffffff", bd=0)
+            self._side_label.pack(fill="both", expand=True, padx=4, pady=4)
+            _side.bind("<Configure>", self._on_side_resize)
 
-    def _on_log_resize(self, event):
-        """按日志框高度缩放水印（保持比例、30% 透明、右下角对齐）。"""
-        if self._wm_base is None:
+    def _on_side_resize(self, event):
+        """让右侧 mascot 随面板高度缩放（保持比例，与文字并排不重叠）。"""
+        if not getattr(self, "_mascot_src", None):
             return
-        target_h = max(40, event.height - 12)
-        bw, bh = self._wm_base.size
-        target_w = max(1, int(bw * target_h / bh))
-        if getattr(self, "_wm_size", None) == (target_h, target_w):
-            return
-        self._wm_size = (target_h, target_w)
+        w = max(30, event.width - 8)
+        h = max(30, event.height - 8)
+        src = self._mascot_src
+        sc = min(w / src.width, h / src.height)
+        nw = max(1, int(src.width * sc))
+        nh = max(1, int(src.height * sc))
         from PIL import Image, ImageTk
-        self._wm_im = ImageTk.PhotoImage(self._wm_base.resize((target_w, target_h), Image.LANCZOS))
-        self._log_wm.configure(image=self._wm_im)
+        self._side_img = ImageTk.PhotoImage(src.resize((nw, nh), Image.LANCZOS))
+        self._side_label.configure(image=self._side_img)
 
     # ---------------- 设备 ----------------
     def _refresh_devices(self):
