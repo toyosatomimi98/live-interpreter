@@ -118,7 +118,7 @@ try:
 except Exception:
     edge_tts = None
 
-from translation import Translator, load_api_key
+from translation import Translator, build_translator, load_api_key
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -383,6 +383,7 @@ class Pipeline:
                  source="mic", save_audio=False, max_seg=4.0,
                  min_silence=0.5, min_words=3, translation_workers=2,
                  course_file=None,
+                 translator=None,
                  status_cb=None, segment_cb=None, error_cb=None, log_cb=None):
         self.model_size = model_size
         self.voice_enabled = voice_enabled
@@ -402,7 +403,7 @@ class Pipeline:
         self.error_cb = error_cb or (lambda *a, **k: None)
         self.log_cb = log_cb or (lambda *a, **k: None)
 
-        self.translator = Translator()
+        self.translator = translator or Translator()
         # 分段器始终在 16kHz 工作：silero VAD 是 16kHz 模型，采样率不符会严重丢段（尤其内录 48k）。
         self.segmenter = Segmenter(sample_rate=SAMPLE_RATE, sensitivity=sensitivity,
                                    max_seg=max_seg, min_silence=min_silence)
@@ -960,7 +961,7 @@ def finalize_transcript(logger):
         return
     try:
         from translation import Translator
-        tr = Translator()
+        tr = build_translator()
         text = "\n".join(f"EN: {en}" for en, zh, sec in logger.entries)
         if len(text) > 6000:
             text = text[:6000] + "\n…（内容较长，已截断用于摘要）"
@@ -1357,6 +1358,7 @@ class GUI:
             save_audio=self.rec_var.get(),
             max_seg=float(self.maxseg_var.get()),
             course_file=course_file,
+            translator=make_translator(self.opts),
             device=self._selected_device(),
             sensitivity=float(self.sens_scale.get()),
             status_cb=lambda s: self.ui_q.put(("status", s)),
@@ -1508,8 +1510,17 @@ class GUI:
 # ----------------------------------------------------------------------------
 # 控制台模式
 # ----------------------------------------------------------------------------
+def make_translator(opts):
+    """根据 CLI 参数（或环境变量）构造 Translator，统一接入后端选择。"""
+    backend = getattr(opts, "translate_backend", None)
+    base_url = getattr(opts, "local_base_url", None)
+    model = getattr(opts, "local_model", None)
+    return build_translator(backend=backend, base_url=base_url, model=model)
+
+
 def run_console(opts):
-    trans = Translator()
+    trans = make_translator(opts)
+    print("translate backend:", trans.backend)
     print(f"{_C_GRAY}已使用 API key：{trans.key_summary()}{_C_RESET}")
     src_txt = "系统声音" if opts.source == "system" else "麦克风"
     print(f"{_C_GRAY}正在从{src_txt}实时识别并翻译… Ctrl+C 退出。{_C_RESET}\n")
@@ -1571,7 +1582,8 @@ def _console_log(kind, text):
 # 文件模式：识别单个音频文件
 # ----------------------------------------------------------------------------
 def run_file(path, opts):
-    trans = Translator()
+    trans = make_translator(opts)
+    print("translate backend:", trans.backend)
     print("翻译后端 api_key：", trans.key_summary())
     print("识别文件：", path)
     model = WhisperModel(opts.model, device="cpu", compute_type="int8")
@@ -1666,6 +1678,14 @@ def main():
                     help="课程课件 Markdown 路径（如 courseware\\xxx.md），用于术语对齐")
     ap.add_argument("--device", default=None,
                     help="指定设备名或ID（麦克风输入或内录设备）；默认自动选择")
+    ap.add_argument("--translate-backend",
+                    choices=["auto", "deepseek", "local", "google"], default=None,
+                    help="翻译后端：auto(默认,有key用DeepSeek否则Google)/"
+                         "deepseek/Local(Ollama等本地OpenAI兼容)/google")
+    ap.add_argument("--local-base-url", default=None,
+                    help="本地 OpenAI 兼容地址(默认 http://localhost:11434/v1)")
+    ap.add_argument("--local-model", default=None,
+                    help="本地模型名(默认 qwen2.5:14b)")
     opts = ap.parse_args()
 
     if opts.list_devices:

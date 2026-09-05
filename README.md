@@ -59,6 +59,23 @@ For the best results, split into **live** and **offline**:
 This way you get **live captions** (a fast model) *and* an **accurate full transcript**
 (the best model), which is the recommended way to use the tool.
 
+## Pluggable translation backend (DeepSeek / local)
+
+By default translation uses **DeepSeek** (cloud). The translator is now pluggable so
+you can point it at a **local OpenAI-compatible server** (e.g. Ollama, llama.cpp, or
+vLLM) for offline / private / bulk use — useful when you want to process lots of audio
+without paying per call.
+
+- Pick a backend via `--translate-backend {auto,deepseek,local,google}`, or the
+  `TRANSLATE_BACKEND` env var. `auto` keeps today's behavior (DeepSeek if a key is
+  present, otherwise the free Google fallback).
+- For a local backend, set `--local-base-url` / `--local-model` (or
+  `LOCAL_LLM_BASE_URL` / `LOCAL_LLM_MODEL`). Defaults are
+  `http://localhost:11434/v1` and model `qwen2.5:14b`.
+- This is a **work-in-progress hook**: the pluggable backend + factory are in place,
+  but a friendly in-UI backend picker and a GPU / offline-batch workflow still come
+  next.
+
 ## Documentation
 
 - [Usage guide](docs/GUIDE.md) — sources, options, latency, accuracy tips, troubleshooting
