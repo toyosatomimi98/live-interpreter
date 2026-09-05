@@ -1058,6 +1058,8 @@ class GUI:
         self.rec_var = tk.BooleanVar(value=False)
         self.source_var = tk.StringVar(value="麦克风")
         self.model_var = tk.StringVar(value=opts.model)
+        self.backend_var = tk.StringVar(value="auto")
+        self.local_model_var = tk.StringVar(value="qwen2.5:7b")
         self.maxseg_var = tk.StringVar(value="4")
         self.course_var = tk.StringVar(value="(无课件)")
         self.device_var = tk.StringVar()
@@ -1147,6 +1149,20 @@ class GUI:
         self.model_box.pack(anchor="w", padx=10, pady=(2, 4))
         self.model_box.bind("<<ComboboxSelected>>", self._on_model)
         tk.Label(sidebar, text="[越大越准但越慢；大模型建议配合文件模式]",
+                 bg="#ffffff", fg="#9ca3af", font=("Microsoft YaHei UI", 8),
+                 wraplength=220, justify="left").pack(anchor="w", padx=10)
+
+        tk.Label(sidebar, text="翻译后端", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
+        self.backend_box = ttk.Combobox(sidebar, values=["auto", "deepseek", "local", "google"],
+                                        textvariable=self.backend_var, width=22, state="readonly")
+        self.backend_box.pack(anchor="w", padx=10, pady=(2, 4))
+        self.backend_box.bind("<<ComboboxSelected>>", self._on_backend)
+        tk.Label(sidebar, text="本地模型（Ollama）", bg="#ffffff", fg="#6b7280",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(8, 0))
+        self.local_model_entry = tk.Entry(sidebar, textvariable=self.local_model_var, width=22)
+        self.local_model_entry.pack(anchor="w", padx=10, pady=(2, 4))
+        tk.Label(sidebar, text="[选 local 时，需 Ollama 在本机 localhost:11434]",
                  bg="#ffffff", fg="#9ca3af", font=("Microsoft YaHei UI", 8),
                  wraplength=220, justify="left").pack(anchor="w", padx=10)
 
@@ -1337,6 +1353,9 @@ class GUI:
         else:
             clog("尚未启动，将在下次开始生效")
 
+    def _on_backend(self, event=None):
+        clog(f"翻译后端 -> {self.backend_var.get()}")
+
     def _refresh_courses(self):
         proj_dir = os.path.dirname(os.path.abspath(__file__))
         found = []
@@ -1393,6 +1412,10 @@ class GUI:
     def _build_pipeline(self):
         source = "system" if self.source_var.get() == "系统声音" else "mic"
         course_file = None if self.course_var.get() == "(无课件)" else self.course_var.get()
+        backend = self.backend_var.get()
+        local_model = self.local_model_var.get()
+        translator = build_translator(backend=backend,
+                                      model=local_model if backend == "local" else None)
         self.pipeline = Pipeline(
             model_size=self.model_var.get(),
             voice_enabled=self.voice_var.get(),
@@ -1400,7 +1423,7 @@ class GUI:
             save_audio=self.rec_var.get(),
             max_seg=float(self.maxseg_var.get()),
             course_file=course_file,
-            translator=make_translator(self.opts),
+            translator=translator,
             device=self._selected_device(),
             sensitivity=float(self.sens_scale.get()),
             status_cb=lambda s: self.ui_q.put(("status", s)),
