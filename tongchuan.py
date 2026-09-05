@@ -60,7 +60,46 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
+# 让 Windows 加载器在 faster-whisper/ctranslate2 加载前就能找到 cuBLAS/nvrtc（便于用 GPU）。
+_DLL_DIR_TOKENS: list = []
+try:
+    import sysconfig as _sysconfig
+    import ctypes as _ctypes_w
+    _sp = _sysconfig.get_paths()["purelib"]
+    for _rel in ("nvidia/cublas/bin", "nvidia/cuda_nvrtc/bin"):
+        _d = os.path.join(_sp, _rel)
+        if os.path.isdir(_d):
+            try:
+                _DLL_DIR_TOKENS.append(os.add_dll_directory(_d))
+            except Exception:
+                pass
+    _cbl = os.path.join(_sp, "nvidia/cublas/bin/cublas64_12.dll")
+    if os.path.exists(_cbl):
+        _ctypes_w.WinDLL(_cbl)
+except Exception:
+    pass
+
+
 from faster_whisper import WhisperModel
+
+
+def _asr_device_compute() -> tuple[str, str]:
+    """返回 (device, compute_type)：CUDA 与 cuBLAS 都可用才 GPU float16，否则 CPU int8。"""
+    try:
+        import ctranslate2 as _ct
+        if _ct.get_cuda_device_count() <= 0:
+            raise RuntimeError("no cuda device")
+        if os.name == "nt":
+            import ctypes
+            _ct_dir = os.path.dirname(_ct.__file__)
+            with os.add_dll_directory(_ct_dir):
+                ctypes.WinDLL("cublas64_12.dll")
+                ctypes.WinDLL("cublasLt64_12.dll")
+        return "cuda", "float16"
+    except Exception:
+        pass
+    return "cpu", "int8"
+
 
 try:
     from faster_whisper.vad import get_speech_timestamps as _get_speech_timestamps
@@ -668,7 +707,9 @@ class Pipeline:
         self.status_cb("正在加载语音模型（首次约 10~20 秒）…")
         clog(f"开始加载识别模型 -> {self.model_size}")
         try:
-            self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+            _dev, _cmp = _asr_device_compute()
+            self.model = WhisperModel(self.model_size, device=_dev, compute_type=_cmp)
+            clog(f"识别设备: {_dev} / {_cmp}")
         except Exception as e:
             self.error_cb(f"语音模型加载失败：{e}")
             clog(f"模型加载失败：{type(e).__name__}: {e}")
@@ -686,7 +727,8 @@ class Pipeline:
                 self.status_cb(f"正在切换模型到 {new}…")
                 clog(f"正在切换模型 -> {new}")
                 try:
-                    self.model = WhisperModel(new, device="cpu", compute_type="int8")
+                    _dev, _cmp = _asr_device_compute()
+                    self.model = WhisperModel(new, device=_dev, compute_type=_cmp)
                     self.current_model = new
                     self.model_size = new
                     self.status_cb(f"已切换到模型 {new}，继续听…")
@@ -1586,7 +1628,9 @@ def run_file(path, opts):
     print("translate backend:", trans.backend)
     print("翻译后端 api_key：", trans.key_summary())
     print("识别文件：", path)
-    model = WhisperModel(opts.model, device="cpu", compute_type="int8")
+    _dev, _cmp = _asr_device_compute()
+    model = WhisperModel(opts.model, device=_dev, compute_type=_cmp)
+    print(f"识别设备: {_dev} / {_cmp}")
     print("识别中…")
     segments, info = model.transcribe(path, beam_size=1, language="en", vad_filter=True)
     lines = []

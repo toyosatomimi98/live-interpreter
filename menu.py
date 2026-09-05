@@ -84,6 +84,13 @@ def main():
         mk = _ask("  请选择 (默认2): ", "2", set(MODELS))
         model = MODELS[mk][0]
 
+        bk = _ask("翻译后端: [1]自动(auto)  [2]本地Ollama(local)  [3]DeepSeek  [4]Google  (默认1): ",
+                  "1", {"1", "2", "3", "4"})
+        backend = {"1": "auto", "2": "local", "3": "deepseek", "4": "google"}[bk]
+        local_model = ""
+        if backend == "local":
+            local_model = _ask("本地模型 (默认 qwen2.5:7b): ", "qwen2.5:7b")
+
         save = _ask("保存录音到 recordings\\? (y/n, 默认y): ", "y", {"y", "n"})
         voice = _ask("中文朗读? (y/n, 默认n): ", "n", {"y", "n"})
         maxseg = _ask("分段上限(秒, 默认4.0): ", "4.0", cast=float)
@@ -92,7 +99,8 @@ def main():
         course = input("课件 Markdown 路径(回车跳过): ").strip()
 
         print("\n确认配置：")
-        print(f"  来源={src}  设备={dev or '自动'}  模型={model}  保存录音={'是' if save=='y' else '否'}  朗读={'是' if voice=='y' else '否'}")
+        backend_label = backend + (f"({local_model})" if backend == "local" else "")
+        print(f"  来源={src}  设备={dev or '自动'}  模型={model}  翻译后端={backend_label}  保存录音={'是' if save=='y' else '否'}  朗读={'是' if voice=='y' else '否'}")
         print(f"  分段上限={maxseg}s  静音判据={minsil}s  最少词数={minwords}" + (f"  课件={course}" if course else ""))
         ok = _ask("确认开始? (y/n, 默认y): ", "y", {"y", "n"})
         if ok != "y":
@@ -105,6 +113,9 @@ def main():
         if save == "y":
             cmd.append("--save-audio")
         cmd.append("--voice" if voice == "y" else "--no-voice")
+        cmd += ["--translate-backend", backend]
+        if backend == "local":
+            cmd += ["--local-model", local_model]
         if dev:
             cmd += ["--device", dev]
         if course:
