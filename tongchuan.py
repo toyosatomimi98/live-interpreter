@@ -1514,7 +1514,7 @@ def run_console(opts):
     src_txt = "系统声音" if opts.source == "system" else "麦克风"
     print(f"{_C_GRAY}正在从{src_txt}实时识别并翻译… Ctrl+C 退出。{_C_RESET}\n")
     pipe = Pipeline(model_size=opts.model, voice_enabled=opts.voice_enabled,
-                    source=opts.source, device=None, sensitivity=opts.sensitivity,
+                    source=opts.source, device=opts.device, sensitivity=opts.sensitivity,
                     save_audio=opts.save_audio,
                     course_file=opts.course,
                     max_seg=opts.max_seg, min_silence=opts.min_silence,
@@ -1664,6 +1664,8 @@ def main():
                     help="同时把采集到的声音录入 recordings\\*.wav（16kHz 单声道）")
     ap.add_argument("--course", default=None,
                     help="课程课件 Markdown 路径（如 courseware\\xxx.md），用于术语对齐")
+    ap.add_argument("--device", default=None,
+                    help="指定设备名或ID（麦克风输入或内录设备）；默认自动选择")
     opts = ap.parse_args()
 
     if opts.list_devices:
