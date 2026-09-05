@@ -16,6 +16,26 @@ Full usage for `live-interpreter`.
 > Those benign warnings are suppressed. For accuracy, use the audio-file or
 > microphone modes.
 
+## Recommended workflow
+
+Best practice, especially on a CPU-only machine where large models can't run in real
+time:
+
+1. **Live (during class):** use a model that keeps up in real time — `base.en`, or
+   `tiny.en` if you need the lowest latency. Tick **录制音频存文件** so the app also
+   writes the captured audio to `recordings\*.wav`.
+2. **Afterwards (offline):** translate the saved recording with the **best model**
+   (`large-v3-turbo`, or `medium.en` / `large-v3`) in **file mode**, so accuracy isn't
+   limited by real-time constraints:
+
+   ```bat
+   .venv\Scripts\python.exe tongchuan.py --file "recordings\同传录音_....wav" --save --model large-v3-turbo
+   ```
+
+This gives you live captions during class **and** an accurate full transcript
+afterwards — the recommended combination. Alternatively, record the lecture with your
+own tool (e.g. OBS) and run file mode on that file.
+
 ## Usage
 
 ### GUI (default)

@@ -42,6 +42,23 @@ term alignment if you have it, and press **开始**.
 - **Privacy** — audio is processed locally; only the recognized English text is sent
   to DeepSeek.
 
+## Recommended workflow
+
+For the best results, split into **live** and **offline**:
+
+1. **Live (class):** use a fast model so it keeps up in real time (`base.en` or
+   `tiny.en`), and tick **录制音频存文件** to save the audio while it plays.
+2. **Afterwards (offline):** at a suitable time, translate the saved recording with
+   the **best model** (`large-v3-turbo`) in **file mode** for the most accurate
+   transcript:
+
+   ```bat
+   .venv\Scripts\python.exe tongchuan.py --file "recordings\同传录音_....wav" --save --model large-v3-turbo
+   ```
+
+This way you get **live captions** (a fast model) *and* an **accurate full transcript**
+(the best model), which is the recommended way to use the tool.
+
 ## Documentation
 
 - [Usage guide](docs/GUIDE.md) — sources, options, latency, accuracy tips, troubleshooting
