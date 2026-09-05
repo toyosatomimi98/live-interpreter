@@ -7,3 +7,7 @@ scipy>=1.11
 soundcard>=0.4.6
 pymupdf>=1.24
 python-pptx>=1.0
+
+# Optional GPU (NVIDIA): lets faster-whisper/ctranslate2 run on CUDA.
+# Install only if you have an NVIDIA GPU and want faster recognition:
+#   pip install nvidia-cublas-cu12
