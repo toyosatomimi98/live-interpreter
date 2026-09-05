@@ -19,6 +19,38 @@ MODELS = {
 }
 
 
+def _pick_device(src):
+    """枚举该来源的可选设备并让用户选择；返回设备名（None=自动）。"""
+    devs = []
+    try:
+        if src == "system":
+            import soundcard as sc
+            mics = sc.all_microphones(include_loopback=True)
+            devs = [m.name for m in mics if getattr(m, "isloopback", False)]
+            if not devs:
+                devs = [m.name for m in mics]
+        else:
+            import sounddevice as sd
+            devs = [d["name"] for d in sd.query_devices() if d["max_input_channels"] > 0]
+    except Exception as e:
+        print(f"  (无法枚举设备，使用自动选择：{type(e).__name__})")
+        return None
+    if not devs:
+        print("  (未发现可用设备，使用自动选择)")
+        return None
+    print("设备:")
+    print("  [0] 自动选择")
+    for i, n in enumerate(devs, 1):
+        print(f"  [{i}] {n}")
+    choice = input("  请选择 (默认0): ").strip()
+    if not choice or choice == "0":
+        return None
+    if choice.isdigit() and 1 <= int(choice) <= len(devs):
+        return devs[int(choice) - 1]
+    print("  无效输入，使用自动选择")
+    return None
+
+
 def _ask(prompt, default=None, valid=None, cast=None):
     while True:
         raw = input(prompt).strip()
@@ -44,6 +76,7 @@ def main():
     while True:
         c = _ask("声音来源: [1]麦克风  [2]系统声音  (默认1): ", "1", {"1", "2"})
         src = "mic" if c == "1" else "system"
+        dev = _pick_device(src)
 
         print("识别模型:")
         for k, (_, desc) in MODELS.items():
@@ -59,7 +92,7 @@ def main():
         course = input("课件 Markdown 路径(回车跳过): ").strip()
 
         print("\n确认配置：")
-        print(f"  来源={src}  模型={model}  保存录音={'是' if save=='y' else '否'}  朗读={'是' if voice=='y' else '否'}")
+        print(f"  来源={src}  设备={dev or '自动'}  模型={model}  保存录音={'是' if save=='y' else '否'}  朗读={'是' if voice=='y' else '否'}")
         print(f"  分段上限={maxseg}s  静音判据={minsil}s  最少词数={minwords}" + (f"  课件={course}" if course else ""))
         ok = _ask("确认开始? (y/n, 默认y): ", "y", {"y", "n"})
         if ok != "y":
@@ -72,6 +105,8 @@ def main():
         if save == "y":
             cmd.append("--save-audio")
         cmd.append("--voice" if voice == "y" else "--no-voice")
+        if dev:
+            cmd += ["--device", dev]
         if course:
             cmd += ["--course", course]
 
