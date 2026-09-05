@@ -21,6 +21,11 @@ import urllib.parse
 import urllib.request
 
 
+# 本地后端默认参数（OpenAI 兼容 /chat/completions，如 Ollama / llama.cpp / vLLM）
+DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1"
+DEFAULT_LOCAL_MODEL = "qwen2.5:14b"
+
+
 # 面向“电子与计算机工程”专业内容的翻译提示词。
 ECE_SYSTEM_PROMPT = (
     "You are a simultaneous interpreter for a Chinese student of Electronic and "
@@ -110,11 +115,18 @@ class Translator:
     def __init__(self, api_key: str | None = None,
                  base_url: str = "https://api.deepseek.com/",
                  model: str = "deepseek-chat",
+                 backend: str = "auto",
                  system_prompt: str | None = None,
                  glossary: str = ""):
+        self.backend = (backend or "auto").lower()
         self.api_key = api_key or load_api_key()
-        self.base_url = base_url.rstrip("/")
-        self.model = model
+        if self.backend == "local":
+            # 本地 OpenAI 兼容后端（如 Ollama / llama.cpp / vLLM），通常无需 API key
+            self.base_url = (base_url or DEFAULT_LOCAL_BASE_URL).rstrip("/")
+            self.model = model or DEFAULT_LOCAL_MODEL
+        else:
+            self.base_url = (base_url or "https://api.deepseek.com/").rstrip("/")
+            self.model = model or "deepseek-chat"
         self.system_prompt = system_prompt or ECE_SYSTEM_PROMPT
         self.glossary = glossary
         self.last_backend = "none"
@@ -129,11 +141,12 @@ class Translator:
             ],
             "temperature": 0.3,
         }).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = "Bearer " + self.api_key
         req = urllib.request.Request(
             self.base_url + "/chat/completions",
-            data=body, method="POST",
-            headers={"Content-Type": "application/json",
-                     "Authorization": "Bearer " + self.api_key},
+            data=body, method="POST", headers=headers,
         )
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.load(resp)
@@ -167,6 +180,17 @@ class Translator:
         self.last_backend = "deepseek"
         return content
 
+    def _local(self, text: str, context: str = "") -> str:
+        content = self.system_prompt
+        if self.glossary:
+            content += ("\n\n术语表（翻译时请优先使用这些标准译法）：\n" + self.glossary)
+        if context:
+            content += ("\n\n当前讲义背景（据此理解语境，术语以其为准）：\n" + context)
+        content = self._chat(content, text)
+        self.last_backend = "local"
+        self.last_error = ""
+        return content
+
     def _google(self, text: str) -> str:
         url = ("https://translate.googleapis.com/translate_a/single"
                "?client=gtx&sl=en&tl=zh-CN&dt=t&q=" + urllib.parse.quote(text[:4500]))
@@ -186,6 +210,32 @@ class Translator:
             return ""
 
         self.last_error = ""
+        # 显式后端 local：本地 OpenAI 兼容（如 Ollama / llama.cpp / vLLM）
+        if self.backend == "local":
+            try:
+                return self._local(text, context)
+            except Exception as e:
+                self.last_error = f"local: {type(e).__name__}: {e}"
+                raise RuntimeError(self.last_error)
+        # 显式后端 deepseek：仅云端
+        if self.backend == "deepseek":
+            if self.api_key:
+                try:
+                    return self._deepseek(text, context)
+                except Exception as e:
+                    self.last_error = f"deepseek: {type(e).__name__}: {e}"
+            else:
+                self.last_error = "deepseek: no api key"
+            raise RuntimeError(self.last_error or "translation failed")
+        # 显式后端 google：免费接口
+        if self.backend == "google":
+            try:
+                return self._google(text)
+            except Exception as e:
+                self.last_error = f"google: {type(e).__name__}: {e}"
+                raise RuntimeError(self.last_error)
+
+        # 默认 auto：有 key 走 DeepSeek，否则/失败用 Google
         if self.api_key:
             try:
                 return self._deepseek(text, context)
@@ -204,6 +254,33 @@ class Translator:
 
     def key_summary(self) -> str:
         return _mask(self.api_key)
+
+
+def build_translator(backend: str | None = None,
+                     base_url: str | None = None,
+                     model: str | None = None,
+                     system_prompt: str | None = None,
+                     glossary: str = "") -> Translator:
+    """根据参数/环境变量构造 Translator，便于命令行与 UI 统一接入本地后端。
+
+    优先级：函数参数 > 环境变量 > 默认。
+      TRANSLATE_BACKEND   -> auto|deepseek|local|google
+      LOCAL_LLM_BASE_URL  -> 本地 OpenAI 兼容地址（默认 http://localhost:11434/v1）
+      LOCAL_LLM_MODEL     -> 本地模型名（默认 qwen2.5:14b）
+    """
+    backend = (backend or os.environ.get("TRANSLATE_BACKEND") or "auto").lower()
+    kwargs = {"backend": backend, "system_prompt": system_prompt, "glossary": glossary}
+    if backend == "local":
+        kwargs["base_url"] = (base_url or os.environ.get("LOCAL_LLM_BASE_URL")
+                              or DEFAULT_LOCAL_BASE_URL)
+        kwargs["model"] = (model or os.environ.get("LOCAL_LLM_MODEL")
+                           or DEFAULT_LOCAL_MODEL)
+    else:
+        if base_url:
+            kwargs["base_url"] = base_url
+        if model:
+            kwargs["model"] = model
+    return Translator(**kwargs)
 
 
 if __name__ == "__main__":
