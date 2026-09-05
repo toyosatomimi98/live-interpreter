@@ -1074,6 +1074,7 @@ class GUI:
         self._mascot_src = None  # 右侧 mascot 原图（全分辨率，用于缩放）
 
         self._build_widgets()
+        self._fit_window_height()
         self._refresh_courses()
         self._refresh_devices()
         self._poll()
@@ -1089,6 +1090,7 @@ class GUI:
                            highlightthickness=1, width=250)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
+        self._sidebar = sidebar
 
         self._mascot = None
         self._mascot_src = None
@@ -1108,7 +1110,7 @@ class GUI:
                 _a = _a.point(lambda v: int(v * 0.30))
                 self._mascot_src = Image.merge("RGBA", (_r, _g, _b, _a))
                 # 侧边栏头像：不透明，缩到 220x200 内
-                _scale = min(220 / _ow, 200 / _oh)
+                _scale = min(220 / _ow, 150 / _oh)
                 _im = _src.resize((max(1, int(_ow * _scale)),
                                    max(1, int(_oh * _scale))), Image.LANCZOS)
                 self._mascot = ImageTk.PhotoImage(_im)
@@ -1159,9 +1161,13 @@ class GUI:
         self.backend_box.pack(anchor="w", padx=10, pady=(2, 4))
         self.backend_box.bind("<<ComboboxSelected>>", self._on_backend)
         tk.Label(sidebar, text="本地模型（Ollama）", bg="#ffffff", fg="#6b7280",
-                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(8, 0))
-        self.local_model_entry = tk.Entry(sidebar, textvariable=self.local_model_var, width=22)
-        self.local_model_entry.pack(anchor="w", padx=10, pady=(2, 4))
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w", padx=10, pady=(6, 0))
+        self.local_model_box = ttk.Combobox(sidebar,
+                                            values=["qwen2.5:7b", "qwen2.5:14b", "qwen2.5:3b",
+                                                    "qwen2.5:1.5b", "llama3.1:8b", "llama3.1:70b"],
+                                            textvariable=self.local_model_var, width=22,
+                                            state="normal")
+        self.local_model_box.pack(anchor="w", padx=10, pady=(2, 4))
         tk.Label(sidebar, text="[选 local 时，需 Ollama 在本机 localhost:11434]",
                  bg="#ffffff", fg="#9ca3af", font=("Microsoft YaHei UI", 8),
                  wraplength=220, justify="left").pack(anchor="w", padx=10)
@@ -1355,6 +1361,19 @@ class GUI:
 
     def _on_backend(self, event=None):
         clog(f"翻译后端 -> {self.backend_var.get()}")
+
+    def _fit_window_height(self):
+        """初始窗口高度刚好容纳侧边栏所有栏目（不溢出、不冗余）。"""
+        try:
+            self._sidebar.pack_propagate(True)
+            self.root.update_idletasks()
+            need = self._sidebar.winfo_reqheight()
+            self._sidebar.pack_propagate(False)
+            h = max(660, need + 12)
+            self.root.geometry(f"1040x{h}")
+            self.root.minsize(960, h)
+        except Exception:
+            pass
 
     def _refresh_courses(self):
         proj_dir = os.path.dirname(os.path.abspath(__file__))
