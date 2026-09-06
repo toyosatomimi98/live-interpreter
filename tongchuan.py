@@ -157,7 +157,7 @@ try:
 except Exception:
     edge_tts = None
 
-from translation import Translator, build_translator, load_api_key
+from translation import Translator, build_translator, load_api_key, DEFAULT_LOCAL_MODEL
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -1063,6 +1063,7 @@ class GUI:
         self.maxseg_var = tk.StringVar(value="4")
         self.course_var = tk.StringVar(value="(无课件)")
         self.device_var = tk.StringVar()
+        self.trans_model_var = tk.StringVar(value="翻译模型: --")
         self.skip_tts = threading.Lock()
         self.ui_q: "queue.Queue[tuple]" = queue.Queue()
         self.logger: "MarkdownLogger | None" = None
@@ -1077,6 +1078,9 @@ class GUI:
         self._fit_window_height()
         self._refresh_courses()
         self._refresh_devices()
+        self.backend_var.trace_add("write", lambda *a: self._update_model_display())
+        self.local_model_var.trace_add("write", lambda *a: self._update_model_display())
+        self._update_model_display()
         self._poll()
 
     def _build_widgets(self):
@@ -1204,6 +1208,8 @@ class GUI:
 
         top = tk.Frame(content, bg="#f4f6fb")
         top.pack(fill="x", padx=12, pady=(10, 4))
+        tk.Label(top, textvariable=self.trans_model_var, bg="#f4f6fb", fg="#7c3aed",
+                 font=("Microsoft YaHei UI", 10, "bold")).pack(side="right", padx=(8, 0))
         tk.Label(top, textvariable=self.status_var, bg="#f4f6fb", fg="#1f6feb",
                  font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
 
@@ -1266,6 +1272,7 @@ class GUI:
                            font=("Microsoft YaHei UI", 10), bd=0, state="disabled")
         self.log.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         self.log.tag_configure("gray", foreground="#9aa0a6")
+        self.log.tag_configure("warn", foreground="#b45309")
         self._side_img = None
         self._side = None
         if self._mascot_src:
@@ -1362,6 +1369,39 @@ class GUI:
     def _on_backend(self, event=None):
         clog(f"翻译后端 -> {self.backend_var.get()}")
 
+    def _resolved_backend_model(self) -> tuple[str, str]:
+        """根据当前界面设置，解析出(后端, 模型名)，用于顶部模型展示。"""
+        backend = self.backend_var.get()
+        if backend == "local":
+            model = (self.local_model_var.get() or DEFAULT_LOCAL_MODEL).strip()
+            return "local", model
+        if backend == "deepseek":
+            return "deepseek", build_translator(backend="deepseek").model
+        if backend == "google":
+            return "google", "google"
+        # auto：有 key 用 DeepSeek，否则回退 Google 免费翻译
+        if load_api_key():
+            return "deepseek", build_translator(backend="deepseek").model
+        return "google", "google"
+
+    def _update_model_display(self, _=None):
+        backend, model = self._resolved_backend_model()
+        if backend == "google":
+            self.trans_model_var.set("翻译后端: Google 免费翻译")
+        else:
+            self.trans_model_var.set(f"翻译模型: {model}")
+
+    def _backend_label(self, backend: str) -> str | None:
+        """根据实际用到的后端返回顶部徽标文本；无法识别时返回 None。"""
+        if backend == "local":
+            model = (self.local_model_var.get() or DEFAULT_LOCAL_MODEL).strip()
+            return f"翻译模型: {model}"
+        if backend == "deepseek":
+            return "翻译模型: deepseek-chat"
+        if backend == "google":
+            return "翻译后端: Google 免费翻译"
+        return None
+
     def _fit_window_height(self):
         """初始窗口高度刚好容纳侧边栏所有栏目（不溢出、不冗余）。"""
         try:
@@ -1433,8 +1473,11 @@ class GUI:
         course_file = None if self.course_var.get() == "(无课件)" else self.course_var.get()
         backend = self.backend_var.get()
         local_model = self.local_model_var.get()
-        translator = build_translator(backend=backend,
-                                      model=local_model if backend == "local" else None)
+        translator = build_translator(
+            backend=backend,
+            model=local_model if backend == "local" else None,
+            log_cb=lambda msg: self.ui_q.put(("log", "WARN", msg)))
+        self._update_model_display()
         self.pipeline = Pipeline(
             model_size=self.model_var.get(),
             voice_enabled=self.voice_var.get(),
@@ -1490,6 +1533,9 @@ class GUI:
         elif kind == "ZH":
             line = f"    ZH: {text}\n"
             tag = None
+        elif kind == "WARN":
+            line = f"[{ts}] ⚠ {text}\n"
+            tag = "warn"
         else:
             line = text + "\n"
             tag = "gray"
@@ -1560,6 +1606,9 @@ class GUI:
         en = item.get("en", "")
         zh = item.get("zh", "")
         backend = item.get("backend", "")
+        label = self._backend_label(backend)
+        if label:
+            self.trans_model_var.set(label)
         lat = item.get("latency")
         if isinstance(lat, (int, float)):
             self.lat_var.set(f"延迟 {lat:.1f}s")
@@ -1594,16 +1643,16 @@ class GUI:
 # ----------------------------------------------------------------------------
 # 控制台模式
 # ----------------------------------------------------------------------------
-def make_translator(opts):
+def make_translator(opts, log_cb=None):
     """根据 CLI 参数（或环境变量）构造 Translator，统一接入后端选择。"""
     backend = getattr(opts, "translate_backend", None)
     base_url = getattr(opts, "local_base_url", None)
     model = getattr(opts, "local_model", None)
-    return build_translator(backend=backend, base_url=base_url, model=model)
+    return build_translator(backend=backend, base_url=base_url, model=model, log_cb=log_cb)
 
 
 def run_console(opts):
-    trans = make_translator(opts)
+    trans = make_translator(opts, log_cb=lambda m: print(f"{_C_GRAY}[翻译兜底] {m}{_C_RESET}"))
     print("translate backend:", trans.backend)
     print(f"{_C_GRAY}已使用 API key：{trans.key_summary()}{_C_RESET}")
     src_txt = "系统声音" if opts.source == "system" else "麦克风"
@@ -1666,7 +1715,7 @@ def _console_log(kind, text):
 # 文件模式：识别单个音频文件
 # ----------------------------------------------------------------------------
 def run_file(path, opts):
-    trans = make_translator(opts)
+    trans = make_translator(opts, log_cb=lambda m: print(f"[翻译兜底] {m}"))
     print("translate backend:", trans.backend)
     print("翻译后端 api_key：", trans.key_summary())
     print("识别文件：", path)

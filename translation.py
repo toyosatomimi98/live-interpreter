@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.parse
 import urllib.request
 
@@ -117,7 +118,8 @@ class Translator:
                  model: str = "deepseek-chat",
                  backend: str = "auto",
                  system_prompt: str | None = None,
-                 glossary: str = ""):
+                 glossary: str = "",
+                 log_cb=None):
         self.backend = (backend or "auto").lower()
         self.api_key = api_key or load_api_key()
         if self.backend == "local":
@@ -131,6 +133,8 @@ class Translator:
         self.glossary = glossary
         self.last_backend = "none"
         self.last_error = ""
+        self.log_cb = log_cb
+        self.event_log: list[dict] = []
 
     def _chat(self, system_prompt: str, user_text: str) -> str:
         body = json.dumps({
@@ -171,6 +175,8 @@ class Translator:
         return title, summary
 
     def _deepseek(self, text: str, context: str = "") -> str:
+        if not self.api_key:
+            raise RuntimeError("deepseek: no api key")
         content = self.system_prompt
         if self.glossary:
             content += ("\n\n术语表（翻译时请优先使用这些标准译法）:\n" + self.glossary)
@@ -203,54 +209,89 @@ class Translator:
         self.last_error = ""
         return out
 
+    def _candidate_order(self) -> list[str]:
+        """构造后端尝试顺序：优先用配置的后端，失败后用 DeepSeek / Google 兜底。"""
+        order: list[str] = []
+
+        def add(name: str) -> None:
+            if name not in order:
+                order.append(name)
+
+        if self.backend == "local":
+            add("local")
+            if self.api_key:
+                add("deepseek")
+            add("google")
+        elif self.backend == "deepseek":
+            add("deepseek")
+            add("google")
+        elif self.backend == "google":
+            add("google")
+        else:  # auto
+            if self.api_key:
+                add("deepseek")
+            add("google")
+        return order
+
+    def _attempt(self, name: str, text: str, context: str) -> str:
+        if name == "local":
+            return self._local(text, context)
+        if name == "deepseek":
+            return self._deepseek(text, context)
+        if name == "google":
+            return self._google(text)
+        raise RuntimeError(f"unknown translation backend: {name}")
+
+    def _log_event(self, event: str, src: str, dst: str, detail: str) -> None:
+        """记录并上报一次回退/失败事件，便于前端与控制台显示。"""
+        self.event_log.append({
+            "event": event,
+            "from": src,
+            "to": dst,
+            "detail": detail,
+            "at": time.strftime("%H:%M:%S"),
+        })
+        if not self.log_cb:
+            return
+        if event == "fallback":
+            msg = f"翻译引擎回退：{src} 失败（{detail}）→ 改用 {dst}"
+        else:
+            msg = f"翻译全部失败：{detail}"
+        try:
+            self.log_cb(msg)
+        except Exception:
+            pass
+
     def translate(self, text: str, context: str = "") -> str:
-        """返回中文翻译；全部后端失败时抛异常。"""
+        """返回中文翻译；按候选顺序依次尝试，失败自动回退到 DeepSeek / Google 兜底。
+
+        成功时返回译文并记录实际后端到 last_backend；所有后端都失败时抛异常。
+        """
         text = (text or "").strip()
         if not text:
             return ""
 
         self.last_error = ""
-        # 显式后端 local：本地 OpenAI 兼容（如 Ollama / llama.cpp / vLLM）
-        if self.backend == "local":
+        order = self._candidate_order()
+        errors: list[str] = []
+        last_failed: str | None = None
+        for name in order:
             try:
-                return self._local(text, context)
+                out = self._attempt(name, text, context)
             except Exception as e:
-                self.last_error = f"local: {type(e).__name__}: {e}"
-                raise RuntimeError(self.last_error)
-        # 显式后端 deepseek：仅云端
-        if self.backend == "deepseek":
-            if self.api_key:
-                try:
-                    return self._deepseek(text, context)
-                except Exception as e:
-                    self.last_error = f"deepseek: {type(e).__name__}: {e}"
-            else:
-                self.last_error = "deepseek: no api key"
-            raise RuntimeError(self.last_error or "translation failed")
-        # 显式后端 google：免费接口
-        if self.backend == "google":
-            try:
-                return self._google(text)
-            except Exception as e:
-                self.last_error = f"google: {type(e).__name__}: {e}"
-                raise RuntimeError(self.last_error)
+                msg = f"{name}: {type(e).__name__}: {e}"
+                errors.append(msg)
+                self.last_error = msg
+                last_failed = name
+                continue
+            if last_failed is not None:
+                self._log_event("fallback", last_failed, name, errors[-1])
+            self.last_backend = name
+            self.last_error = ""
+            return out
 
-        # 默认 auto：有 key 走 DeepSeek，否则/失败用 Google
-        if self.api_key:
-            try:
-                return self._deepseek(text, context)
-            except Exception as e:
-                self.last_error = f"deepseek: {type(e).__name__}: {e}"
-        else:
-            self.last_error = "no api key"
-
-        # 无 key 或 DeepSeek 失败时，尝试免费 Google 接口
-        try:
-            return self._google(text)
-        except Exception as e:
-            self.last_error += f" | google: {type(e).__name__}: {e}"
-
-        raise RuntimeError(self.last_error or "translation failed")
+        self._log_event("all_failed", last_failed or "none", "", " | ".join(errors))
+        raise RuntimeError(" | ".join(errors) or "translation failed")
 
     def key_summary(self) -> str:
         return _mask(self.api_key)
@@ -260,7 +301,8 @@ def build_translator(backend: str | None = None,
                      base_url: str | None = None,
                      model: str | None = None,
                      system_prompt: str | None = None,
-                     glossary: str = "") -> Translator:
+                     glossary: str = "",
+                     log_cb=None) -> Translator:
     """根据参数/环境变量构造 Translator，便于命令行与 UI 统一接入本地后端。
 
     优先级：函数参数 > 环境变量 > 默认。
@@ -280,6 +322,7 @@ def build_translator(backend: str | None = None,
             kwargs["base_url"] = base_url
         if model:
             kwargs["model"] = model
+    kwargs["log_cb"] = log_cb
     return Translator(**kwargs)
 
 
