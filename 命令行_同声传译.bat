@@ -33,7 +33,7 @@ if not "%SOURCE%"=="system" if not "%SOURCE%"=="mic" (
 echo =====================================================
 echo   Live  source=%SOURCE%  model=%MODEL%
 echo   max_seg=%MAXSEG%s  min_silence=%MINSILENCE%s  min_words=%MINWORDS%
-echo   Also SAVES audio to recordings\ (--save-audio)
+echo   Also SAVES audio to the recording dir (--save-audio)
 echo   Press Ctrl+C to stop.
 echo =====================================================
 REM auto-send Enter to skip the "press Enter" wait

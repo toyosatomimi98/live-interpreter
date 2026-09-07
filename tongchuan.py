@@ -506,7 +506,7 @@ class Pipeline:
         if self.save_audio:
             try:
                 import wave
-                d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
+                d = recordings_dir()
                 os.makedirs(d, exist_ok=True)
                 self._wav_path = os.path.join(d, f"同传录音_{datetime.now():%Y%m%d_%H%M%S}.wav")
                 self._wav = wave.open(self._wav_path, "wb")
@@ -930,6 +930,14 @@ def transcripts_dir() -> str:
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transcripts")
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def recordings_dir() -> str:
+    """返回录音输出目录：优先环境变量 RECORDINGS_DIR，否则项目下 recordings。"""
+    d = (os.environ.get("RECORDINGS_DIR") or "").strip()
+    if d:
+        return d
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
 
 
 def _write_with_retry(path: str, mode: str, text: str,
@@ -1808,7 +1816,7 @@ def main():
     ap.add_argument("--source", choices=["mic", "system"], default="mic",
                     help="声音来源：mic=麦克风，system=电脑内部声音(内录)")
     ap.add_argument("--save-audio", action="store_true",
-                    help="同时把采集到的声音录入 recordings\\*.wav（16kHz 单声道）")
+                    help="同时把采集到的声音录入录音目录（默认 recordings\\，可用环境变量 RECORDINGS_DIR 指定）")
     ap.add_argument("--course", default=None,
                     help="课程课件 Markdown 路径（如 courseware\\xxx.md），用于术语对齐")
     ap.add_argument("--device", default=None,

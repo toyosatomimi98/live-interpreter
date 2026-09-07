@@ -13,6 +13,9 @@ set "MODEL=small.en"
 REM COURSE: optional courseware Markdown for glossary/term alignment (empty = off)
 set "COURSE="
 set "FILE=%~1"
+REM RECORDINGS: folder to auto-pick the newest recording (env RECORDINGS_DIR overrides)
+set "RECORDINGS=%RECORDINGS_DIR%"
+if "%RECORDINGS%"=="" set "RECORDINGS=recordings"
 
 if not exist ".venv\Scripts\python.exe" (
   echo [Error] venv not found. Run setup first.
@@ -21,16 +24,16 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 if "%FILE%"=="" (
-  for /f "delims=" %%F in ('dir /b /o-d "recordings\*.*" 2^>nul') do (
-    set "FILE=recordings\%%F"
+  for /f "delims=" %%F in ('dir /b /o-d "%RECORDINGS%\*.*" 2^>nul') do (
+    set "FILE=%RECORDINGS%\%%F"
     goto :pick
   )
 )
 :pick
 if "%FILE%"=="" (
-  echo [Error] No input file and recordings\ is empty.
+  echo [Error] No input file and "%RECORDINGS%" is empty.
   echo   Usage: filemode.bat "path\to\audio.mp3"
-  echo   Or drop a .wav/.mp3 into recordings\ and run it with no argument.
+  echo   Or drop a .wav/.mp3 into "%RECORDINGS%" and run it with no argument.
   pause
   exit /b 1
 )
