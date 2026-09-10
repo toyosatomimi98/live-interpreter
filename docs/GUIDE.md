@@ -2,6 +2,10 @@
 
 Full usage for `live-interpreter`.
 
+> **New to this?** Read [新手上手指南.md](新手上手指南.md) first — it covers installing
+> Python, running `install.bat`, and the first session, with no assumed background.
+> If something misbehaves, `诊断.bat` (`doctor.bat`) prints an environment report.
+
 ## Sources
 
 - **Microphone** — live, ambient speech (your own voice, or the room). Reliable.
@@ -209,7 +213,12 @@ shows the original English only. Change model/endpoint in `translation.py`.
   suppressed in the launchers via `HF_HUB_DISABLE_SYMLINKS_WARNING=1`.
 - **Only the first sentence, then “待机”:** usually a *source* problem, not a bug.
   On loopback, the stream may be dropping audio → switch to file or microphone.
-- **Reinstall:** run `安装同声传译.bat` (creates env, installs deps, downloads model).
+- **Reinstall:** run `安装同声传译.bat` / `install.bat` (creates env, installs deps,
+  downloads models). On first run it also asks whether to pre-download
+  `large-v3-turbo`.
+- **Anything else:** run `诊断.bat` / `doctor.bat` — it checks Python, packages, model
+  cache, network (HuggingFace / DeepSeek / Google), audio devices and folder write
+  permissions, then prints a pass/warn/fail summary.
 
 ## Testing
 

@@ -23,9 +23,17 @@ Microphone / system audio / file
 ## Quick start (Windows)
 
 ```bat
-安装同声传译.bat   :: install once (needs internet)
-启动同声传译.bat   :: run the app
+install.bat   :: one-time setup: venv + dependencies + speech models (needs internet)
+run.bat       :: start the app
 ```
+
+Double-clicking the Chinese-named twins (`安装同声传译.bat` / `启动同声传译.bat`) does
+exactly the same thing — pick whichever you prefer.
+
+**Handing this to someone else?** Give them
+[docs/新手上手指南.md](docs/新手上手指南.md) — a Chinese, step-by-step guide that
+assumes no Python and no command line. If anything looks wrong, `诊断.bat` (or
+`doctor.bat`) prints a full health report to copy back to you.
 
 Pick a source (microphone / system sound / a file), choose a courseware Markdown for
 term alignment if you have it, and press **开始**.
@@ -78,6 +86,7 @@ without paying per call.
 
 ## Documentation
 
+- [新手操作指南 / beginner's guide](docs/新手上手指南.md) — 中文，从零装到出字幕（发给同学看这份）
 - [Usage guide](docs/GUIDE.md) — sources, options, latency, accuracy tips, troubleshooting
 - [Courseware alignment](docs/COURSEWARE.md) — glossary/context/page tagging + converter
 - [Architecture](docs/ARCHITECTURE.md) — pipeline diagram, threads & queues
@@ -85,9 +94,15 @@ without paying per call.
 
 ## Requirements
 
-- Windows, Python 3.10+ (3.13 tested)
+- Windows, Python 3.10+ (3.11/3.12 recommended; 3.13 tested) — python.org installer or Anaconda both work
 - Internet for translation & voice (ASR works offline)
 - A microphone, and internet if you want the spoken Chinese output
+
+Run `install.bat` once: it creates `.venv`, installs the dependencies and pre-downloads
+the two default speech models (~600 MB), so the first run needs no extra waiting. A
+DeepSeek API key is optional (`设置API密钥.bat` writes it to `.env`); without one the
+app falls back to the free Google translator. `诊断.bat` / `doctor.bat` checks the whole
+environment (Python, packages, models, network, audio devices, write permissions).
 
 ## License
 

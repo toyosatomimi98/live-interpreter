@@ -7,6 +7,8 @@ scipy>=1.11
 soundcard>=0.4.6
 pymupdf>=1.24
 python-pptx>=1.0
+# 图形界面的头像/贴图需要（python-pptx 也会带上，但显式声明更稳）
+pillow>=10.0
 
 # Optional GPU (NVIDIA): lets faster-whisper/ctranslate2 run on CUDA.
 # Install only if you have an NVIDIA GPU and want faster recognition:
