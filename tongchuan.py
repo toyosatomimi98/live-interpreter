@@ -214,6 +214,19 @@ def load_asr_prompt() -> str:
             pass
     return DEFAULT_ASR_PROMPT
 
+
+def _model_error_hint(err: Exception) -> str:
+    """模型加载/下载失败时，给一句能直接照做的提示（多数是首次联网下载没成功）。"""
+    text = f"{type(err).__name__}: {err}".lower()
+    net_tokens = ("connection", "timed out", "timeout", "resolve", "ssl", "http",
+                  "download", "offline", "urlopen", "huggingface", "retries",
+                  "proxy", "certificate", "name or service", "10013", "10054")
+    if any(t in text for t in net_tokens):
+        return ("看起来是首次下载语音模型失败（需要联网）。请先双击“诊断.bat”看网络；"
+                "大陆网络可先设置环境变量 HF_ENDPOINT=https://hf-mirror.com 再重试，"
+                "或先双击“安装同声传译.bat”把模型下载好。")
+    return ""
+
 # tkinter 在无图形环境可能不可用，做可选导入
 try:
     import tkinter as tk
@@ -506,7 +519,7 @@ class Pipeline:
         if self.save_audio:
             try:
                 import wave
-                d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
+                d = recordings_dir()
                 os.makedirs(d, exist_ok=True)
                 self._wav_path = os.path.join(d, f"同传录音_{datetime.now():%Y%m%d_%H%M%S}.wav")
                 self._wav = wave.open(self._wav_path, "wb")
@@ -571,6 +584,7 @@ class Pipeline:
         if sd is None:
             self.error_cb("未找到音频库 sounddevice，无法采集麦克风。")
             return
+        last_err = "系统里没有可用的输入设备（麦克风可能被占用，或未授予权限）"
         for device in self._candidate_devices():
             try:
                 stream = sd.InputStream(
@@ -711,8 +725,13 @@ class Pipeline:
             self.model = WhisperModel(self.model_size, device=_dev, compute_type=_cmp)
             clog(f"识别设备: {_dev} / {_cmp}")
         except Exception as e:
-            self.error_cb(f"语音模型加载失败：{e}")
+            self.error_cb(f"语音模型加载失败：{type(e).__name__}: {e}")
+            hint = _model_error_hint(e)
+            if hint:
+                self.log_cb("WARN", hint)
             clog(f"模型加载失败：{type(e).__name__}: {e}")
+            if hint:
+                clog(hint)
             self.running = False
             return
         self.current_model = self.model_size
@@ -930,6 +949,14 @@ def transcripts_dir() -> str:
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transcripts")
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def recordings_dir() -> str:
+    """返回录音输出目录：优先环境变量 RECORDINGS_DIR，否则项目下 recordings。"""
+    d = (os.environ.get("RECORDINGS_DIR") or "").strip()
+    if d:
+        return d
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
 
 
 def _write_with_retry(path: str, mode: str, text: str,
@@ -1715,6 +1742,12 @@ def _console_log(kind, text):
 # 文件模式：识别单个音频文件
 # ----------------------------------------------------------------------------
 def run_file(path, opts):
+    if not os.path.exists(path):
+        print(f"[错误] 找不到音频文件：{path}")
+        print("       先用 --list-devices / 启动 GUI 确认路径，或在文件模式里传入正确路径。")
+        print('       示例：.venv\\Scripts\\python.exe tongchuan.py --file "recordings\\xxx.wav" '
+              "--save --model small.en")
+        return
     trans = make_translator(opts, log_cb=lambda m: print(f"[翻译兜底] {m}"))
     print("translate backend:", trans.backend)
     print("翻译后端 api_key：", trans.key_summary())
@@ -1808,7 +1841,7 @@ def main():
     ap.add_argument("--source", choices=["mic", "system"], default="mic",
                     help="声音来源：mic=麦克风，system=电脑内部声音(内录)")
     ap.add_argument("--save-audio", action="store_true",
-                    help="同时把采集到的声音录入 recordings\\*.wav（16kHz 单声道）")
+                    help="同时把采集到的声音录入录音目录（默认 recordings\\，可用环境变量 RECORDINGS_DIR 指定）")
     ap.add_argument("--course", default=None,
                     help="课程课件 Markdown 路径（如 courseware\\xxx.md），用于术语对齐")
     ap.add_argument("--device", default=None,

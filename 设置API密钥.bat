@@ -1,3 +1,3 @@
 @echo off
-call "%~dp0install.bat" %*
+call "%~dp0setkey.bat" %*
 exit /b %errorlevel%

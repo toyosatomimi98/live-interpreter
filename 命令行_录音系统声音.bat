@@ -17,7 +17,7 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 echo =====================================================
-echo   Record system sound  -^> recordings\*.wav   model: %MODEL%
+echo   Record system sound  -^> the recording dir   model: %MODEL%
 echo   Live captions while saving audio (--save-audio)
 echo   Start the lecture/audio, then Press Ctrl+C to stop.
 echo   After that, run the file-mode script with no argument to
