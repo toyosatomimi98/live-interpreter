@@ -23,12 +23,24 @@ Microphone / system audio / file
 ## Quick start (Windows)
 
 ```bat
-install.bat   :: one-time setup: venv + dependencies + speech models (needs internet)
-run.bat       :: start the app
+安装同声传译.bat   :: one-time setup: venv + dependencies + speech models (needs internet)
+启动同声传译.exe   :: start the app   <-- double-click this one
 ```
 
-Double-clicking the Chinese-named twins (`安装同声传译.bat` / `启动同声传译.bat`) does
-exactly the same thing — pick whichever you prefer.
+**`启动同声传译.exe`** is the proper entry point: it carries the app icon, so it looks
+and behaves like a normal program — pin it to the taskbar, drag it into the Start menu,
+or run `创建桌面快捷方式.bat` once to drop a shortcut (with the icon) on the desktop
+and in the Start menu.
+
+The exe is deliberately a thin launcher: it starts the GUI with the project's own
+`.venv`, so editing the Python code never requires rebuilding it. If `.venv` is missing
+it offers to run the one-time setup for you, and if the GUI dies right away it shows the
+error instead of failing silently. Rebuild it (only needed after editing `launcher.py`)
+with `build_launcher.bat` — source `launcher.py`, icon `assets/app.ico`, drawn by
+`tools/make_icon.py`.
+
+Console alternatives, if you prefer a window you can read: `run.bat` /
+`启动同声传译.bat` (same app, same arguments).
 
 **Handing this to someone else?** Give them
 [docs/新手上手指南.md](docs/新手上手指南.md) — a Chinese, step-by-step guide that

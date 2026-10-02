@@ -1,0 +1,34 @@
+# UTF-8 version resource embedded into 启动同声传译.exe
+# (shown in Explorer -> Properties -> Details)
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '080404b0',
+          [
+            StringStruct('CompanyName', 'live-interpreter'),
+            StringStruct('FileDescription', '同声传译 · 实时翻译启动器'),
+            StringStruct('FileVersion', '1.0.0.0'),
+            StringStruct('InternalName', 'live-interpreter-launcher'),
+            StringStruct('OriginalFilename', '启动同声传译.exe'),
+            StringStruct('ProductName', '同声传译 live-interpreter'),
+            StringStruct('ProductVersion', '1.0.0.0'),
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [2052, 1200])])
+  ]
+)
+

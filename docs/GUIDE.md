@@ -48,6 +48,13 @@ own tool (e.g. OBS) and run file mode on that file.
 .venv\Scripts\python.exe tongchuan.py
 ```
 
+The everyday entry point is **`启动同声传译.exe`** — a small, icon-carrying launcher
+that starts exactly the command above with the project's `.venv`, shows a dialog if the
+environment is missing, and reports the error instead of vanishing if the GUI dies on
+startup. Run `创建桌面快捷方式.bat` once to get a desktop / Start-menu shortcut.
+`启动同声传译.exe --source system` and other flags are forwarded to `tongchuan.py`.
+Source: `launcher.py`; rebuild with `build_launcher.bat`.
+
 ### Console mode
 
 ```bat

@@ -1,5 +1,35 @@
 # 问题与修复记录（Bug fixes / change log)
 
+## 2026-10-02（正式入口：带图标的 exe 启动器）
+
+问题：启动程序一直靠双击 `.bat`，窗口一闪、图标难看，也不像"一个正经程序"。
+
+### 1. `启动同声传译.exe`（新）：带图标的正式入口
+
+- `launcher.py` + PyInstaller 打成的**单文件、无控制台**启动器，`build_launcher.bat`
+  一键重建（源码和图标都在仓库里，8 MB 左右）。
+- 它**不打包** torch / whisper —— 只是用项目自己的 `.venv` 启动 `tongchuan.py`，
+  所以：启动快、改代码不用重新做 exe、也不会多出一份几 GB 的运行时。
+- 找不到 `.venv` 时弹窗询问是否直接跑一次性安装；程序若秒退，会把日志尾部
+  （`_tmp\launcher.log`）连同退出码弹出来，并提示跑 `诊断.bat`，不再静默失败。
+- 命令行参数原样透传：`启动同声传译.exe --source system`、`--file ...` 等都能用。
+
+### 2. 应用图标：`assets/app.ico`（新）
+
+- 由 `tools/make_icon.py` 用 Pillow 画出（耳机 + "译"），**不依赖任何外部素材**，
+  4 倍超采样后按 16/24/32/48/64/128/256 逐尺寸渲染，小图标不会糊。
+- 出处：`tools/make_icon.py`，要换配色改常量重跑即可。
+
+### 3. GUI 窗口也挂上了图标
+
+- `tongchuan.py` 新增 `apply_window_icon()`：优先用 `assets/app.ico`（Windows 任务栏
+  和标题栏会显示），没有就退回 `assets/app.png`，都没有就静默跳过。
+
+### 4. 桌面 / 开始菜单快捷方式：`创建桌面快捷方式.bat`（新）
+
+- `tools/make_shortcut.py` 通过 PowerShell 的 WScript.Shell 建 `.lnk`，指向 exe 并
+  内嵌图标，**不需要额外装包**；桌面和开始菜单各放一个。
+
 ## 2026-09-10（首次对外发布前的加固）
 
 目标：让"完全没配过环境"的同学也能自己装起来，并且出问题时能自己定位。

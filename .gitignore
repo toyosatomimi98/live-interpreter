@@ -57,3 +57,6 @@ prompt.txt
 
 # 本地私有笔记（用户自己看，不上传 GitHub）
 LOCAL_NOTES.md
+
+# 启动器构建产物（源码是 launcher.py，用 build_launcher.bat 重新生成）
+/live-interpreter.exe

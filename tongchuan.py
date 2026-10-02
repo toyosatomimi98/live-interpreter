@@ -1067,11 +1067,32 @@ def finalize_transcript(logger):
 # ----------------------------------------------------------------------------
 # 图形界面
 # ----------------------------------------------------------------------------
+def apply_window_icon(root):
+    """给窗口和任务栏挂上 assets/app.ico（找不到就静默跳过）。"""
+    proj_dir = os.path.dirname(os.path.abspath(__file__))
+    ico = os.path.join(proj_dir, "assets", "app.ico")
+    png = os.path.join(proj_dir, "assets", "app.png")
+    if os.name == "nt" and os.path.exists(ico):
+        try:
+            root.iconbitmap(default=ico)
+            return
+        except Exception:
+            pass
+    try:
+        if os.path.exists(png):
+            _img = tk.PhotoImage(file=png)
+            root.iconphoto(True, _img)
+            root._li_icon = _img  # 保持引用，避免被回收
+    except Exception:
+        pass
+
+
 class GUI:
     def __init__(self, root, opts):
         self.root = root
         self.opts = opts
         root.title("同声传译 · 麦克风实时翻译")
+        apply_window_icon(root)
         root.geometry("1040x700")
         root.minsize(1000, 660)
         root.configure(bg="#f4f6fb")
