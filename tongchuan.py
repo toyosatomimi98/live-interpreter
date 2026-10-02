@@ -26,6 +26,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+import appconfig
+
 # 系统内录（WASAPI loopback）在空闲/断续时会产生大量良性警告，压掉以免刷屏。
 warnings.filterwarnings("ignore", message=".*data discontinuity in recording.*")
 
@@ -945,18 +947,41 @@ def tempfile_dir() -> str:
     return d
 
 
+def _configured_dir(key: str) -> str:
+    """读取 config.json 里的目录设置（安装包写入），没配返回空串。"""
+    try:
+        return str(appconfig.get(key) or "").strip()
+    except Exception:
+        return ""
+
+
+def _ensure_dir(candidate: str, fallback: str) -> str:
+    """能用就返回 candidate，不可用（盘符不存在/没权限）退回 fallback。"""
+    if not candidate:
+        return fallback
+    try:
+        os.makedirs(candidate, exist_ok=True)
+        return candidate
+    except OSError:
+        try:
+            os.makedirs(fallback, exist_ok=True)
+        except OSError:
+            pass
+        return fallback
+
+
 def transcripts_dir() -> str:
-    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transcripts")
-    os.makedirs(d, exist_ok=True)
-    return d
+    """笔记（转写稿）目录：环境变量 TRANSCRIPTS_DIR > config.json > 程序目录。"""
+    proj = os.path.dirname(os.path.abspath(__file__))
+    cand = (os.environ.get("TRANSCRIPTS_DIR") or "").strip() or _configured_dir("transcripts_dir")
+    return _ensure_dir(cand, os.path.join(proj, "transcripts"))
 
 
 def recordings_dir() -> str:
-    """返回录音输出目录：优先环境变量 RECORDINGS_DIR，否则项目下 recordings。"""
-    d = (os.environ.get("RECORDINGS_DIR") or "").strip()
-    if d:
-        return d
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
+    """录音输出目录：环境变量 RECORDINGS_DIR > config.json > 程序目录 recordings。"""
+    proj = os.path.dirname(os.path.abspath(__file__))
+    cand = (os.environ.get("RECORDINGS_DIR") or "").strip() or _configured_dir("recordings_dir")
+    return _ensure_dir(cand, os.path.join(proj, "recordings"))
 
 
 def _write_with_retry(path: str, mode: str, text: str,
@@ -1104,10 +1129,12 @@ class GUI:
         self.sec_var = tk.StringVar(value="")
         self.voice_var = tk.BooleanVar(value=opts.voice_enabled)
         self.rec_var = tk.BooleanVar(value=False)
-        self.source_var = tk.StringVar(value="麦克风")
+        self.source_var = tk.StringVar(
+            value="系统声音" if getattr(opts, "source", "mic") == "system" else "麦克风")
         self.model_var = tk.StringVar(value=opts.model)
-        self.backend_var = tk.StringVar(value="auto")
-        self.local_model_var = tk.StringVar(value="qwen2.5:7b")
+        self.backend_var = tk.StringVar(value=getattr(opts, "translate_backend", None) or "auto")
+        self.local_model_var = tk.StringVar(
+            value=getattr(opts, "local_model", None) or "qwen2.5:7b")
         self.maxseg_var = tk.StringVar(value="4")
         self.course_var = tk.StringVar(value="(无课件)")
         self.device_var = tk.StringVar()
@@ -1792,8 +1819,7 @@ def run_file(path, opts):
         print("ZH:", zh)
         print("-" * 60)
     if opts.save:
-        out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "transcripts")
-        os.makedirs(out, exist_ok=True)
+        out = transcripts_dir()
         fn = os.path.join(out, f"录音稿_{datetime.now():%Y%m%d_%H%M%S}.md")
         with open(fn, "w", encoding="utf-8") as f:
             f.write(f"# 同声传译记录 {datetime.now():%Y-%m-%d %H:%M}\n\n")
@@ -1840,8 +1866,18 @@ def mic_test():
 
 
 def main():
+    # 安装包写入的 config.json 作为默认值；命令行参数仍然优先。
+    cfg = appconfig.load_config()
+    cfg_model = str(cfg.get("model") or "").strip() or "base.en"
+    cfg_source = str(cfg.get("source") or "").strip().lower()
+    if cfg_source not in ("mic", "system"):
+        cfg_source = "mic"
+    cfg_backend = str(cfg.get("translate_backend") or "").strip().lower()
+    if cfg_backend not in ("auto", "deepseek", "local", "google"):
+        cfg_backend = None
+
     ap = argparse.ArgumentParser(description="麦克风实时英语→中语同声传译")
-    ap.add_argument("--model", default="base.en",
+    ap.add_argument("--model", default=cfg_model,
                     help="whisper 模型（tiny.en/base.en/small.en/medium.en/"
                          "large-v3-turbo/large-v3；实时默认 base.en，tiny.en 最快，大模型建议文件模式）")
     ap.add_argument("--console", action="store_true", help="控制台模式")
@@ -1859,7 +1895,7 @@ def main():
                     help="少于该单词数的识别片段会被跳过（默认 3；设 1 表示不过滤）")
     ap.add_argument("--list-devices", action="store_true", help="列出麦克风设备")
     ap.add_argument("--test-mic", action="store_true", help="自检麦克风电平")
-    ap.add_argument("--source", choices=["mic", "system"], default="mic",
+    ap.add_argument("--source", choices=["mic", "system"], default=cfg_source,
                     help="声音来源：mic=麦克风，system=电脑内部声音(内录)")
     ap.add_argument("--save-audio", action="store_true",
                     help="同时把采集到的声音录入录音目录（默认 recordings\\，可用环境变量 RECORDINGS_DIR 指定）")
@@ -1868,12 +1904,12 @@ def main():
     ap.add_argument("--device", default=None,
                     help="指定设备名或ID（麦克风输入或内录设备）；默认自动选择")
     ap.add_argument("--translate-backend",
-                    choices=["auto", "deepseek", "local", "google"], default=None,
+                    choices=["auto", "deepseek", "local", "google"], default=cfg_backend,
                     help="翻译后端：auto(默认,有key用DeepSeek否则Google)/"
                          "deepseek/Local(Ollama等本地OpenAI兼容)/google")
     ap.add_argument("--local-base-url", default=None,
                     help="本地 OpenAI 兼容地址(默认 http://localhost:11434/v1)")
-    ap.add_argument("--local-model", default=None,
+    ap.add_argument("--local-model", default=str(cfg.get("local_model") or "").strip() or None,
                     help="本地模型名(默认 qwen2.5:14b)")
     opts = ap.parse_args()
 

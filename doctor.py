@@ -325,9 +325,20 @@ def check_audio() -> None:
 
 def check_disk() -> None:
     section("[8] 保存目录写入")
+    import appconfig
+    cfg_path = appconfig.user_config_path()
+    if os.path.exists(cfg_path):
+        info(f"用户配置：{cfg_path}")
+    else:
+        info("用户配置：未找到（安装包会写入 %APPDATA%\\live-interpreter\\config.json）")
+
+    def _dir(key: str, env: str, default_name: str) -> str:
+        d = (os.environ.get(env) or "").strip() or str(appconfig.get(key) or "").strip()
+        return d or os.path.join(HERE, default_name)
+
     targets = [
-        (os.path.join(HERE, "transcripts"), "转写稿"),
-        (os.environ.get("RECORDINGS_DIR") or os.path.join(HERE, "recordings"), "录音"),
+        (_dir("transcripts_dir", "TRANSCRIPTS_DIR", "transcripts"), "转写稿"),
+        (_dir("recordings_dir", "RECORDINGS_DIR", "recordings"), "录音"),
         (os.path.join(HERE, "courseware"), "课件"),
     ]
     for path, label in targets:

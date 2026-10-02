@@ -6,6 +6,27 @@ Full usage for `live-interpreter`.
 > Python, running `install.bat`, and the first session, with no assumed background.
 > If something misbehaves, `诊断.bat` (`doctor.bat`) prints an environment report.
 
+## Install & configuration
+
+Two ways in: the **installer** (`release/同声传译-<版本>-安装包.exe`) or from source
+(`install.bat`, see below). The installer is a normal per-user Windows wizard — no admin
+rights — where you choose the install folder, the **recordings / notes folders**, and an
+optional **DeepSeek API key**; it also creates the shortcuts and an uninstall entry.
+
+Those choices are stored in `%APPDATA%\live-interpreter\config.json` and read at startup:
+
+| config.json key | meaning | environment override |
+| --- | --- | --- |
+| `recordings_dir` | where captured audio goes | `RECORDINGS_DIR` |
+| `transcripts_dir` | where Markdown notes go | `TRANSCRIPTS_DIR` |
+| `api_key` | DeepSeek key (also accepts `.env` in the app folder) | `DEEPSEEK_API_KEY` |
+| `source` | default source, `mic` or `system` | `--source` |
+| `model` | default Whisper model | `--model` |
+| `translate_backend` | `auto` / `deepseek` / `local` / `google` | `--translate-backend` |
+
+A `config.json` placed next to the app overrides the one in `%APPDATA%`, and command-line
+flags win over everything. Uninstalling keeps `config.json`, your recordings and your notes.
+
 ## Sources
 
 - **Microphone** — live, ambient speech (your own voice, or the room). Reliable.

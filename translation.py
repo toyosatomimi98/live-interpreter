@@ -99,6 +99,15 @@ def load_api_key() -> str | None:
         except OSError:
             pass
 
+    # 安装包写入的用户配置：%APPDATA%\live-interpreter\config.json
+    try:
+        import appconfig
+        key = str(appconfig.get("api_key") or "").strip()
+        if key:
+            return key
+    except Exception:
+        pass
+
     return _find_key_in_codex_config()
 
 

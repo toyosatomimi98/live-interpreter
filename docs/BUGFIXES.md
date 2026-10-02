@@ -1,5 +1,47 @@
 # 问题与修复记录（Bug fixes / change log)
 
+## 2026-10-02（正式安装包：带向导的 Setup.exe）
+
+问题：给同学用还得解压、装 Python、双击 bat，不像一个正经软件。
+
+### 1. `release/同声传译-1.0.0-安装包.exe`（Inno Setup，新）
+
+- 标准的 Windows 安装向导（简体中文界面，Inno Setup 6 编译，脚本在
+  `installer/live-interpreter.iss`，中文语言包 `installer/languages/`）。
+- 环节：欢迎 → 许可 → **选择安装位置**（默认 `%LOCALAPPDATA%\Programs\live-interpreter`，
+  **按用户安装、不要管理员权限、不弹 UAC**）→ 附加任务（桌面快捷方式）→
+  **选择录音/笔记保存位置** → **填 DeepSeek API key（可留空）** → 安装 → 完成。
+- 开始菜单建独立分组「同声传译」（程序、诊断、设置密钥、卸载），桌面快捷方式可选；
+  注册表写了卸载信息，能在"设置 → 应用"里正常卸载。
+- 卸载只删程序自己的东西（`.venv`、缓存等），**录音和笔记一律保留**。
+- 支持无人值守：`setup.exe /VERYSILENT /DIR=... /RECORDINGS=... /TRANSCRIPTS=... /APIKEY=...`。
+- 构建：`build_installer.bat` → `tools/build_installer.py`（会自动给 .iss 补 UTF-8 BOM，
+  否则 Inno 会把中文按 ANSI 读成乱码；缺 Inno Setup 时给出安装提示）。
+
+### 2. 用户配置 `config.json`（新，`appconfig.py`）
+
+- 安装包把选择写进 `%APPDATA%\live-interpreter\config.json`（带 BOM 的 UTF-8）：
+  `install_dir` / `recordings_dir` / `transcripts_dir` / `api_key` / `installed_version`。
+- 程序启动时读取，优先级：**命令行 > 环境变量（`RECORDINGS_DIR` / `TRANSCRIPTS_DIR` /
+  `DEEPSEEK_API_KEY`）> 程序目录 config.json > `%APPDATA%` 的 config.json > 代码默认**。
+  本机原有的环境变量用法完全不受影响。
+- 之前 `transcripts_dir()` 写死在程序目录、`--save` 也绕过它；现在统一走同一个函数，
+  配置的目录不可用（盘符没了/没权限）会自动退回程序目录，不会让整场课录不下来。
+- GUI 的声音来源 / 识别模型 / 翻译后端也支持由配置给默认值（命令行仍可覆盖）。
+
+### 3. 没有 Python 的电脑也能装（`tools/install_python.bat`，新）
+
+- `install.bat` 找不到 Python 时，改为询问"是否自动下载安装 Python 3.12"；
+  同意后从 python.org（失败自动换华为镜像）下载官方安装器，**按用户静默安装、不写 PATH、
+  不要管理员权限**，装完自动继续。
+- 自动装失败时仍保留原来手把手的手动指引，不会卡死。
+- 顺带修了 `:probe` 的引号处理：Python 路径里有空格（比如用户名带空格）时也能正确执行。
+
+### 4. `诊断.bat` 报告真实使用的目录
+
+- 第 8 项改为显示解析后的转写稿/录音目录，并显示用户配置文件路径，
+  避免"配置改了但体检还在看旧目录"的误判。
+
 ## 2026-10-02（正式入口：带图标的 exe 启动器）
 
 问题：启动程序一直靠双击 `.bat`，窗口一闪、图标难看，也不像"一个正经程序"。

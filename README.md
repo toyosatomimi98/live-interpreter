@@ -22,6 +22,31 @@ Microphone / system audio / file
 
 ## Quick start (Windows)
 
+**Easiest — install it like a normal program:** double-click
+`release/同声传译-1.0.0-安装包.exe`.
+
+It is a standard Windows setup wizard (Inno Setup, **per-user — no admin rights**):
+
+- choose the **install folder**;
+- pick where **recordings** and **Markdown notes** are saved (defaults to
+  `Documents\同声传译\录音` and `...\笔记`);
+- paste a **DeepSeek API key** (optional — you can add it later);
+- **desktop / Start-menu shortcuts** with the app icon, plus an entry in Windows
+  *Apps & features* so it uninstalls cleanly;
+- on the last page tick **立即准备运行环境** to fetch the Python packages and speech models
+  (~1–2 GB, 5–15 minutes). If the PC has no Python 3.10+, setup downloads and installs
+  Python 3.12 for the current user automatically.
+
+What you choose ends up in `%APPDATA%\live-interpreter\config.json`, which the app reads on
+startup; the environment variables `RECORDINGS_DIR` / `TRANSCRIPTS_DIR` / `DEEPSEEK_API_KEY`
+still take priority over it. Unattended installs are supported, e.g.
+`setup.exe /VERYSILENT /DIR=D:\apps\live-interpreter /RECORDINGS=D:\rec /APIKEY=sk-...`.
+
+Rebuild the installer after code changes with `build_installer.bat` (needs
+[Inno Setup 6](https://jrsoftware.org/isdl.php)); the script is `installer/live-interpreter.iss`.
+
+## Quick start (from source)
+
 ```bat
 安装同声传译.bat   :: one-time setup: venv + dependencies + speech models (needs internet)
 启动同声传译.exe   :: start the app   <-- double-click this one

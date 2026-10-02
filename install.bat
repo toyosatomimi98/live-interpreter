@@ -12,9 +12,10 @@ echo.
 
 REM ---------- [1/5] find a usable Python (3.10+) ----------
 set "PYEXE="
-call :probe python
-if not defined PYEXE call :probe "py -3"
+call :find_python
 if not defined PYEXE goto :no_python
+
+:python_ready
 echo [1/5] Python found - using: %PYEXE%
 
 set "VENV_PY=%CD%\.venv\Scripts\python.exe"
@@ -100,7 +101,19 @@ goto :done
 :no_python
 echo [ERROR] Python 3.10 or newer was not found on this PC.
 echo.
-echo   How to fix:
+choice /c yn /n /t 40 /d y /m "      Download and install Python 3.12 automatically now? [Y/n] "
+if errorlevel 2 goto :no_python_manual
+echo.
+echo [1/5] Installing Python 3.12 for the current user (no admin needed) ...
+call "%~dp0tools\install_python.bat"
+if errorlevel 1 goto :no_python_manual
+call :find_python
+if not defined PYEXE goto :no_python_manual
+echo.
+goto :python_ready
+
+:no_python_manual
+echo   How to fix by hand:
 echo     1. Open  https://www.python.org/downloads/windows/
 echo     2. Download the latest "Windows installer (64-bit)" and run it
 echo     3. IMPORTANT: tick "Add python.exe to PATH" on the first screen
@@ -122,7 +135,27 @@ pause
 exit /b 0
 
 
+:find_python
+call :probe python
+if not defined PYEXE call :probe_py_launcher
+if not defined PYEXE call :probe "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+if not defined PYEXE call :probe "%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+if not defined PYEXE call :scan_python
+exit /b 0
+
+:probe_py_launcher
+py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
+if not errorlevel 1 set "PYEXE=py -3"
+exit /b 0
+
+:scan_python
+for /f "delims=" %%P in ('dir /b /s "%LOCALAPPDATA%\Programs\Python\Python3*\python.exe" 2^>nul') do call :probe "%%P"
+exit /b 0
+
 :probe
-%~1 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
-if not errorlevel 1 set "PYEXE=%~1"
+%1 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
+if errorlevel 1 exit /b 0
+set "PYEXE=%~1"
+REM 真正的文件路径要带引号保存，否则路径里有空格就会执行失败
+if exist "%~1" set "PYEXE="%~1""
 exit /b 0
